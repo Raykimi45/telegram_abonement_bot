@@ -1,6 +1,4 @@
 import os
-import hmac
-import hashlib
 import json
 import time
 import asyncio
@@ -11,9 +9,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from telegram.error import Conflict
 
 TOKEN = os.getenv("TOKEN")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
-# Mapping payment_link ID → tier
 PAYMENT_LINKS = {
     "plink_1TVXET7U8dMyWbthflB8Pxox": "premium",
     "plink_1TVXMR7U8dMyWbth22E7uF3n": "vip",
@@ -50,26 +46,6 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
 
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
-        sig_header = self.headers.get("Stripe-Signature", "")
-
-        if STRIPE_WEBHOOK_SECRET:
-            try:
-                timestamp = sig_header.split("t=")[1].split(",")[0]
-                sig = sig_header.split("v1=")[1].split(",")[0]
-                signed_payload = f"{timestamp}.{body.decode()}"
-                expected = hmac.new(
-                    STRIPE_WEBHOOK_SECRET.encode(),
-                    signed_payload.encode(),
-                    hashlib.sha256
-                ).hexdigest()
-                if not hmac.compare_digest(expected, sig):
-                    self.send_response(400)
-                    self.end_headers()
-                    return
-            except Exception:
-                self.send_response(400)
-                self.end_headers()
-                return
 
         try:
             event = json.loads(body)
@@ -78,6 +54,7 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
+        # Répondre 200 immédiatement
         self.send_response(200)
         self.end_headers()
 
@@ -87,12 +64,12 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
             payment_link = session.get("payment_link")
             tier = PAYMENT_LINKS.get(payment_link)
 
-            print(f"📦 Paiement reçu — telegram_id: {telegram_id}, payment_link: {payment_link}, tier: {tier}")
+            print(f"📦 Paiement — telegram_id: {telegram_id}, tier: {tier}")
 
             if telegram_id and tier:
                 asyncio.run(ajouter_membre(int(telegram_id), tier))
             else:
-                print("❌ telegram_id ou tier manquant")
+                print(f"❌ Manquant — telegram_id: {telegram_id}, payment_link: {payment_link}, tier: {tier}")
 
 async def ajouter_membre(telegram_id: int, tier: str):
     try:
@@ -146,8 +123,8 @@ if __name__ == "__main__":
             print("✅ Bot démarré...")
             app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
         except Conflict:
-            print("⚠️ Conflit détecté, nouvelle tentative dans 5 secondes...")
+            print("⚠️ Conflit, retry dans 5s...")
             time.sleep(5)
         except Exception as e:
-            print(f"❌ Erreur: {e}, redémarrage dans 5 secondes...")
+            print(f"❌ Erreur: {e}, retry dans 5s...")
             time.sleep(5)
