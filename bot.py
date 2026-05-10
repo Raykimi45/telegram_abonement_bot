@@ -32,7 +32,37 @@ TIERS = {
     }
 }
 
-bot = Bot(token=TOKEN)
+# Event loop dédié pour les appels Telegram depuis le webhook
+webhook_loop = asyncio.new_event_loop()
+
+def run_webhook_loop():
+    asyncio.set_event_loop(webhook_loop)
+    webhook_loop.run_forever()
+
+async def ajouter_membre(telegram_id: int, tier: str):
+    bot = Bot(token=TOKEN)
+    try:
+        invite = await bot.create_chat_invite_link(
+            chat_id=CANAUX[tier],
+            member_limit=1,
+            creates_join_request=False
+        )
+        await bot.send_message(
+            chat_id=telegram_id,
+            text=f"✅ Paiement confirmé !\n\nRejoint ton canal {TIERS[tier]['nom']} ici (lien à usage unique) :\n{invite.invite_link}"
+        )
+        print(f"✅ Lien envoyé à {telegram_id} pour {tier}")
+    except Exception as e:
+        print(f"❌ Erreur: {e}")
+        try:
+            await bot.send_message(
+                chat_id=telegram_id,
+                text="✅ Paiement reçu ! Contacte le support si tu n'as pas encore accès."
+            )
+        except Exception:
+            pass
+    finally:
+        await bot.shutdown()
 
 class StripeWebhookHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -66,31 +96,12 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
             print(f"📦 Paiement — telegram_id: {telegram_id}, tier: {tier}")
 
             if telegram_id and tier:
-                asyncio.run(ajouter_membre(int(telegram_id), tier))
+                asyncio.run_coroutine_threadsafe(
+                    ajouter_membre(int(telegram_id), tier),
+                    webhook_loop
+                )
             else:
                 print(f"❌ Manquant — telegram_id: {telegram_id}, payment_link: {payment_link}, tier: {tier}")
-
-async def ajouter_membre(telegram_id: int, tier: str):
-    try:
-        invite = await bot.create_chat_invite_link(
-            chat_id=CANAUX[tier],
-            member_limit=1,
-            creates_join_request=False
-        )
-        await bot.send_message(
-            chat_id=telegram_id,
-            text=f"✅ Paiement confirmé !\n\nRejoint ton canal {TIERS[tier]['nom']} ici (lien à usage unique) :\n{invite.invite_link}"
-        )
-        print(f"✅ Lien envoyé à {telegram_id} pour {tier}")
-    except Exception as e:
-        print(f"❌ Erreur: {e}")
-        try:
-            await bot.send_message(
-                chat_id=telegram_id,
-                text="✅ Paiement reçu ! Contacte le support si tu n'as pas encore accès."
-            )
-        except Exception:
-            pass
 
 def start_webhook_server():
     server = HTTPServer(("0.0.0.0", 8000), StripeWebhookHandler)
@@ -115,8 +126,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == "__main__":
     time.sleep(15)
-    t = threading.Thread(target=start_webhook_server, daemon=True)
-    t.start()
+
+    # Démarrer le loop dédié webhook
+    loop_thread = threading.Thread(target=run_webhook_loop, daemon=True)
+    loop_thread.start()
+
+    # Démarrer le serveur webhook
+    webhook_thread = threading.Thread(target=start_webhook_server, daemon=True)
+    webhook_thread.start()
     print("✅ Serveur webhook démarré sur le port 8000")
 
     while True:
