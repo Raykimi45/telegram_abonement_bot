@@ -8,7 +8,7 @@ import asyncio
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-TOKEN = os.getenv("TOKEN", "8159201968:AAHa7wHU5dsfSkbWUJMnpcd5D9hXfZQPhl8")
+TOKEN = os.getenv("TOKEN")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
 CANAUX = {
