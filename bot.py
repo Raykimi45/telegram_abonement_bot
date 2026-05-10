@@ -13,6 +13,12 @@ from telegram.error import Conflict
 TOKEN = os.getenv("TOKEN")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
+# Mapping payment_link ID → tier
+PAYMENT_LINKS = {
+    "plink_1TVXET7U8dMyWbthflB8Pxox": "premium",
+    "plink_1TVXMR7U8dMyWbth22E7uF3n": "vip",
+}
+
 CANAUX = {
     "premium": -1003947632446,
     "vip":     -1003769970686,
@@ -77,11 +83,16 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
 
         if event.get("type") == "checkout.session.completed":
             session = event["data"]["object"]
-            metadata = session.get("metadata", {})
-            telegram_id = metadata.get("telegram_id")
-            tier = metadata.get("tier")
-            if telegram_id and tier and tier in CANAUX:
+            telegram_id = session.get("client_reference_id")
+            payment_link = session.get("payment_link")
+            tier = PAYMENT_LINKS.get(payment_link)
+
+            print(f"📦 Paiement reçu — telegram_id: {telegram_id}, payment_link: {payment_link}, tier: {tier}")
+
+            if telegram_id and tier:
                 asyncio.run(ajouter_membre(int(telegram_id), tier))
+            else:
+                print("❌ telegram_id ou tier manquant")
 
 async def ajouter_membre(telegram_id: int, tier: str):
     try:
@@ -90,11 +101,16 @@ async def ajouter_membre(telegram_id: int, tier: str):
             chat_id=telegram_id,
             text=f"✅ Paiement confirmé ! Tu as été ajouté au canal {TIERS[tier]['nom']}."
         )
-    except Exception:
-        await bot.send_message(
-            chat_id=telegram_id,
-            text="✅ Paiement reçu ! Contacte le support si tu n'as pas encore accès."
-        )
+        print(f"✅ {telegram_id} ajouté au canal {tier}")
+    except Exception as e:
+        print(f"❌ Erreur ajout: {e}")
+        try:
+            await bot.send_message(
+                chat_id=telegram_id,
+                text="✅ Paiement reçu ! Contacte le support si tu n'as pas encore accès."
+            )
+        except Exception:
+            pass
 
 def start_webhook_server():
     server = HTTPServer(("0.0.0.0", 8000), StripeWebhookHandler)
@@ -105,11 +121,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton(
             f"{TIERS['premium']['nom']} — {TIERS['premium']['prix']}",
-            url=f"{TIERS['premium']['lien']}?client_reference_id={telegram_id}&metadata[telegram_id]={telegram_id}&metadata[tier]=premium"
+            url=f"{TIERS['premium']['lien']}?client_reference_id={telegram_id}"
         )],
         [InlineKeyboardButton(
             f"{TIERS['vip']['nom']}",
-            url=f"{TIERS['vip']['lien']}?client_reference_id={telegram_id}&metadata[telegram_id]={telegram_id}&metadata[tier]=vip"
+            url=f"{TIERS['vip']['lien']}?client_reference_id={telegram_id}"
         )],
     ]
     await update.message.reply_text(
@@ -118,9 +134,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 if __name__ == "__main__":
-    # Attendre que l'ancienne instance soit complètement arrêtée
     time.sleep(5)
-
     t = threading.Thread(target=start_webhook_server, daemon=True)
     t.start()
     print("✅ Serveur webhook démarré sur le port 8000")
