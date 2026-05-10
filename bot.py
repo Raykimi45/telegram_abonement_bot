@@ -54,7 +54,6 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        # Répondre 200 immédiatement
         self.send_response(200)
         self.end_headers()
 
@@ -73,14 +72,18 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
 
 async def ajouter_membre(telegram_id: int, tier: str):
     try:
-        await bot.unban_chat_member(chat_id=CANAUX[tier], user_id=telegram_id, only_if_banned=False)
+        invite = await bot.create_chat_invite_link(
+            chat_id=CANAUX[tier],
+            member_limit=1,
+            creates_join_request=False
+        )
         await bot.send_message(
             chat_id=telegram_id,
-            text=f"✅ Paiement confirmé ! Tu as été ajouté au canal {TIERS[tier]['nom']}."
+            text=f"✅ Paiement confirmé !\n\nRejoint ton canal {TIERS[tier]['nom']} ici (lien à usage unique) :\n{invite.invite_link}"
         )
-        print(f"✅ {telegram_id} ajouté au canal {tier}")
+        print(f"✅ Lien envoyé à {telegram_id} pour {tier}")
     except Exception as e:
-        print(f"❌ Erreur ajout: {e}")
+        print(f"❌ Erreur: {e}")
         try:
             await bot.send_message(
                 chat_id=telegram_id,
@@ -111,7 +114,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 if __name__ == "__main__":
-    time.sleep(5)
+    time.sleep(15)
     t = threading.Thread(target=start_webhook_server, daemon=True)
     t.start()
     print("✅ Serveur webhook démarré sur le port 8000")
@@ -123,8 +126,8 @@ if __name__ == "__main__":
             print("✅ Bot démarré...")
             app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
         except Conflict:
-            print("⚠️ Conflit, retry dans 5s...")
+            print("⚠️ Conflit, retry dans 15s...")
             time.sleep(15)
         except Exception as e:
-            print(f"❌ Erreur: {e}, retry dans 5s...")
+            print(f"❌ Erreur: {e}, retry dans 15s...")
             time.sleep(15)
