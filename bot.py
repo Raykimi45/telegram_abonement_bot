@@ -73,7 +73,7 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
 
 async def ajouter_membre(telegram_id: int, tier: str):
     try:
-        await bot.add_chat_member(chat_id=CANAUX[tier], user_id=telegram_id)
+        await bot.unban_chat_member(chat_id=CANAUX[tier], user_id=telegram_id, only_if_banned=False)
         await bot.send_message(
             chat_id=telegram_id,
             text=f"✅ Paiement confirmé ! Tu as été ajouté au canal {TIERS[tier]['nom']}."
