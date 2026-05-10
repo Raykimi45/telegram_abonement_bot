@@ -124,7 +124,7 @@ if __name__ == "__main__":
             app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
         except Conflict:
             print("⚠️ Conflit, retry dans 5s...")
-            time.sleep(5)
+            time.sleep(15)
         except Exception as e:
             print(f"❌ Erreur: {e}, retry dans 5s...")
-            time.sleep(5)
+            time.sleep(15)
