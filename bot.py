@@ -2,11 +2,13 @@ import os
 import hmac
 import hashlib
 import json
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
+import time
 import asyncio
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.error import Conflict
 
 TOKEN = os.getenv("TOKEN")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
@@ -116,10 +118,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 if __name__ == "__main__":
+    # Attendre que l'ancienne instance soit complètement arrêtée
+    time.sleep(5)
+
     t = threading.Thread(target=start_webhook_server, daemon=True)
     t.start()
     print("✅ Serveur webhook démarré sur le port 8000")
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    print("✅ Bot démarré...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+
+    while True:
+        try:
+            app = ApplicationBuilder().token(TOKEN).build()
+            app.add_handler(CommandHandler("start", start))
+            print("✅ Bot démarré...")
+            app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+        except Conflict:
+            print("⚠️ Conflit détecté, nouvelle tentative dans 5 secondes...")
+            time.sleep(5)
+        except Exception as e:
+            print(f"❌ Erreur: {e}, redémarrage dans 5 secondes...")
+            time.sleep(5)
