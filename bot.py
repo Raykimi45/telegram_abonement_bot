@@ -287,6 +287,10 @@ def start_webhook_server():
     server.serve_forever()
 
 if __name__ == "__main__":
+    import subprocess
+    print(subprocess.run(["df", "-h"], capture_output=True, text=True).stdout)
+    print("LS DATA:", subprocess.run(["ls", "-la", "/data"], capture_output=True, text=True).stdout)
+    print("LS APP:", subprocess.run(["ls", "-la", "/app"], capture_output=True, text=True).stdout)
     time.sleep(15)
 
     loop_thread = threading.Thread(target=run_webhook_loop, daemon=True)
