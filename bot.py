@@ -9,6 +9,7 @@ from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram.error import Conflict
 import urllib.request
+import stripe
 
 TOKEN = os.getenv("TOKEN")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
@@ -68,25 +69,19 @@ def get_sub_for_user(telegram_id: int):
     return None, None
 
 def stripe_cancel_subscription(subscription_id: str):
-    url = f"https://api.stripe.com/v1/subscriptions/{subscription_id}/cancel"
-    print(f"🔑 Appel Stripe cancel: {url}")
-    req = urllib.request.Request(url, data=b"", method="POST")
-    req.add_header("Authorization", f"Bearer {STRIPE_SECRET_KEY}")
-    req.add_header("Content-Type", "application/x-www-form-urlencoded")
     try:
-        urllib.request.urlopen(req)
+        stripe.api_key = STRIPE_SECRET_KEY
+        result = stripe.Subscription.cancel(subscription_id)
+        print(f"✅ Stripe cancel OK: {result.status}")
         return True
     except Exception as e:
         print(f"❌ Erreur Stripe cancel: {e}")
         return False
 
 def stripe_get_subscription(subscription_id: str):
-    url = f"https://api.stripe.com/v1/subscriptions/{subscription_id}"
-    req = urllib.request.Request(url, method="GET")
-    req.add_header("Authorization", f"Bearer {STRIPE_SECRET_KEY}")
     try:
-        with urllib.request.urlopen(req) as r:
-            return json.loads(r.read())
+        stripe.api_key = STRIPE_SECRET_KEY
+        return stripe.Subscription.retrieve(subscription_id)
     except Exception as e:
         print(f"❌ Erreur Stripe get: {e}")
         return None
