@@ -182,7 +182,7 @@ async def resilier(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stripe_sub = stripe_get_subscription(sub_id)
     date_fin = "inconnue"
     if stripe_sub:
-        ts = stripe_sub.get("current_period_end")
+        ts = getattr(stripe_sub, "current_period_end", None)
         if ts:
             date_fin = datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
 
