@@ -40,12 +40,12 @@ SUBS_FILE = "/data/subscriptions.json"
 def load_data():
     os.makedirs("/data", exist_ok=True)
     if not os.path.exists(SUBS_FILE):
-        return {"subscriptions": {}, "users": {}}
+        return {"subscriptions": {}, "users": {}, "customers": {}}
     try:
         with open(SUBS_FILE, "r") as f:
             return json.load(f)
     except Exception:
-        return {"subscriptions": {}, "users": {}}
+        return {"subscriptions": {}, "users": {}, "customers": {}}
 
 def save_data(data):
     os.makedirs("/data", exist_ok=True)
@@ -96,6 +96,7 @@ async def ajouter_membre(telegram_id: int, tier: str, subscription_id: str):
         data["subscriptions"] = {k: v for k, v in data["subscriptions"].items() if v["telegram_id"] != telegram_id}
         data["subscriptions"][subscription_id] = {"telegram_id": telegram_id, "tier": tier}
         save_data(data)
+        print(f"💾 Sauvegardé: {subscription_id} → {telegram_id} ({tier})")
 
         invite = await bot.create_chat_invite_link(
             chat_id=CANAUX[tier],
@@ -260,20 +261,48 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
         if event_type == "checkout.session.completed":
             session = event["data"]["object"]
             telegram_id = session.get("client_reference_id")
+            customer_id = session.get("customer")
             payment_link = session.get("payment_link")
             subscription_id = session.get("subscription")
             tier = PAYMENT_LINKS.get(payment_link)
 
-            print(f"🔎 subscription_id brut: {subscription_id}")
-            print(f"🔎 payment_link: {payment_link}")
-            print(f"🔎 telegram_id: {telegram_id}")
-            print(f"🔎 tier: {tier}")
+            print(f"🔎 subscription_id: {subscription_id}, customer: {customer_id}, telegram_id: {telegram_id}, tier: {tier}")
+
+            if telegram_id and customer_id:
+                # Sauvegarder customer_id → telegram_id
+                data = load_data()
+                data["customers"][customer_id] = int(telegram_id)
+                save_data(data)
 
             if telegram_id and tier and subscription_id:
                 asyncio.run_coroutine_threadsafe(
                     ajouter_membre(int(telegram_id), tier, subscription_id),
                     webhook_loop
                 )
+
+        elif event_type == "customer.subscription.created":
+            obj = event["data"]["object"]
+            subscription_id = obj.get("id")
+            customer_id = obj.get("customer")
+            # Retrouver le telegram_id via customer_id
+            data = load_data()
+            telegram_id = data["customers"].get(customer_id)
+            # Retrouver le tier via les items de l'abonnement
+            # On cherche dans les subscriptions existantes par customer
+            existing_tier = None
+            for sub in data["subscriptions"].values():
+                if sub.get("customer_id") == customer_id:
+                    existing_tier = sub["tier"]
+                    break
+            print(f"🔎 subscription.created: {subscription_id}, customer: {customer_id}, telegram_id: {telegram_id}")
+            if telegram_id and subscription_id:
+                # Mettre à jour le sub_id dans les données
+                data["subscriptions"] = {k: v for k, v in data["subscriptions"].items() if v["telegram_id"] != telegram_id}
+                # On garde le tier depuis checkout si disponible
+                if existing_tier:
+                    data["subscriptions"][subscription_id] = {"telegram_id": telegram_id, "tier": existing_tier, "customer_id": customer_id}
+                    save_data(data)
+                    print(f"✅ sub_id mis à jour: {subscription_id}")
 
         elif event_type in ("customer.subscription.deleted", "invoice.payment_failed"):
             obj = event["data"]["object"]
