@@ -262,6 +262,11 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
             subscription_id = session.get("subscription")
             tier = PAYMENT_LINKS.get(payment_link)
 
+            print(f"🔎 subscription_id brut: {subscription_id}")
+            print(f"🔎 payment_link: {payment_link}")
+            print(f"🔎 telegram_id: {telegram_id}")
+            print(f"🔎 tier: {tier}")
+
             if telegram_id and tier and subscription_id:
                 asyncio.run_coroutine_threadsafe(
                     ajouter_membre(int(telegram_id), tier, subscription_id),
