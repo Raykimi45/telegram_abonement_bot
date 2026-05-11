@@ -43,7 +43,15 @@ def load_data():
         return {"subscriptions": {}, "users": {}, "customers": {}}
     try:
         with open(SUBS_FILE, "r") as f:
-            return json.load(f)
+            data = json.load(f)
+            # Ajouter les clés manquantes si elles n'existent pas
+            if "subscriptions" not in data:
+                data["subscriptions"] = {}
+            if "users" not in data:
+                data["users"] = {}
+            if "customers" not in data:
+                data["customers"] = {}
+            return data
     except Exception:
         return {"subscriptions": {}, "users": {}, "customers": {}}
 
