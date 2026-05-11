@@ -69,6 +69,7 @@ def get_sub_for_user(telegram_id: int):
 
 def stripe_cancel_subscription(subscription_id: str):
     url = f"https://api.stripe.com/v1/subscriptions/{subscription_id}/cancel"
+    print(f"🔑 Appel Stripe cancel: {url}")
     req = urllib.request.Request(url, data=b"", method="POST")
     req.add_header("Authorization", f"Bearer {STRIPE_SECRET_KEY}")
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
