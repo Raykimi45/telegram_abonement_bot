@@ -3,12 +3,15 @@ import json
 import time
 import asyncio
 import threading
+from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram.error import Conflict
+import urllib.request
 
 TOKEN = os.getenv("TOKEN")
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 
 PAYMENT_LINKS = {
     "plink_1TVXET7U8dMyWbthflB8Pxox": "premium",
@@ -32,25 +35,53 @@ TIERS = {
     }
 }
 
-# Fichier de stockage sur le volume Railway
 SUBS_FILE = "/data/subscriptions.json"
 
-def load_subs():
+def load_data():
     os.makedirs("/data", exist_ok=True)
     if not os.path.exists(SUBS_FILE):
-        return {}
+        return {"subscriptions": {}, "users": {}}
     try:
         with open(SUBS_FILE, "r") as f:
             return json.load(f)
     except Exception:
-        return {}
+        return {"subscriptions": {}, "users": {}}
 
-def save_subs(subs):
+def save_data(data):
     os.makedirs("/data", exist_ok=True)
     with open(SUBS_FILE, "w") as f:
-        json.dump(subs, f)
+        json.dump(data, f)
 
-# Event loop dédié pour les appels Telegram depuis le webhook
+def get_sub_for_user(telegram_id: int):
+    data = load_data()
+    for sub_id, sub in data["subscriptions"].items():
+        if sub["telegram_id"] == telegram_id:
+            return sub_id, sub
+    return None, None
+
+def stripe_cancel_subscription(subscription_id: str):
+    url = f"https://api.stripe.com/v1/subscriptions/{subscription_id}"
+    data = b"cancel_at_period_end=false"
+    req = urllib.request.Request(url, data=data, method="DELETE")
+    req.add_header("Authorization", f"Bearer {STRIPE_SECRET_KEY}")
+    try:
+        urllib.request.urlopen(req)
+        return True
+    except Exception as e:
+        print(f"❌ Erreur Stripe cancel: {e}")
+        return False
+
+def stripe_get_subscription(subscription_id: str):
+    url = f"https://api.stripe.com/v1/subscriptions/{subscription_id}"
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Authorization", f"Bearer {STRIPE_SECRET_KEY}")
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read())
+    except Exception as e:
+        print(f"❌ Erreur Stripe get: {e}")
+        return None
+
 webhook_loop = asyncio.new_event_loop()
 
 def run_webhook_loop():
@@ -60,13 +91,10 @@ def run_webhook_loop():
 async def ajouter_membre(telegram_id: int, tier: str, subscription_id: str):
     bot = Bot(token=TOKEN)
     try:
-        # Sauvegarder la correspondance subscription → telegram
-        subs = load_subs()
-        subs[subscription_id] = {"telegram_id": telegram_id, "tier": tier}
-        save_subs(subs)
-        print(f"💾 Sauvegardé: {subscription_id} → {telegram_id} ({tier})")
+        data = load_data()
+        data["subscriptions"][subscription_id] = {"telegram_id": telegram_id, "tier": tier}
+        save_data(data)
 
-        # Envoyer lien d'invitation à usage unique
         invite = await bot.create_chat_invite_link(
             chat_id=CANAUX[tier],
             member_limit=1,
@@ -79,22 +107,14 @@ async def ajouter_membre(telegram_id: int, tier: str, subscription_id: str):
         print(f"✅ Lien envoyé à {telegram_id} pour {tier}")
     except Exception as e:
         print(f"❌ Erreur ajout: {e}")
-        try:
-            await bot.send_message(
-                chat_id=telegram_id,
-                text="✅ Paiement reçu ! Contacte le support si tu n'as pas encore accès."
-            )
-        except Exception:
-            pass
     finally:
         await bot.shutdown()
 
 async def retirer_membre(subscription_id: str):
     bot = Bot(token=TOKEN)
     try:
-        subs = load_subs()
-        sub = subs.get(subscription_id)
-
+        data = load_data()
+        sub = data["subscriptions"].get(subscription_id)
         if not sub:
             print(f"❌ Subscription inconnue: {subscription_id}")
             return
@@ -102,25 +122,111 @@ async def retirer_membre(subscription_id: str):
         telegram_id = sub["telegram_id"]
         tier = sub["tier"]
 
-        # Kick du canal
         await bot.ban_chat_member(chat_id=CANAUX[tier], user_id=telegram_id)
         await bot.unban_chat_member(chat_id=CANAUX[tier], user_id=telegram_id)
 
-        # Message à l'utilisateur
         await bot.send_message(
             chat_id=telegram_id,
-            text=f"😔 Ton abonnement {TIERS[tier]['nom']} a expiré ou a été annulé.\n\nTu as été retiré du canal.\n\nTu peux te réabonner à tout moment 👇"
+            text=f"😔 Ton abonnement {TIERS[tier]['nom']} a expiré ou a été annulé.\n\nTu as été retiré du canal.\n\nTu peux te réabonner à tout moment 👇",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔄 Se réabonner", url=TIERS[tier]["lien"])
+            ]])
         )
 
-        # Supprimer de la base
-        del subs[subscription_id]
-        save_subs(subs)
+        del data["subscriptions"][subscription_id]
+        save_data(data)
         print(f"✅ {telegram_id} retiré du canal {tier}")
-
     except Exception as e:
         print(f"❌ Erreur retrait: {e}")
     finally:
         await bot.shutdown()
+
+# ── Commandes bot ────────────────────────────────────────────────────────────
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = update.effective_user.id
+    keyboard = [
+        [InlineKeyboardButton(
+            f"{TIERS['premium']['nom']} — {TIERS['premium']['prix']}",
+            url=f"{TIERS['premium']['lien']}?client_reference_id={telegram_id}"
+        )],
+        [InlineKeyboardButton(
+            f"{TIERS['vip']['nom']}",
+            url=f"{TIERS['vip']['lien']}?client_reference_id={telegram_id}"
+        )],
+    ]
+    await update.message.reply_text(
+        "🔥 Passe à l'abonnement supérieur !\n\nChoisis ton offre 👇",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def resilier(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    telegram_id = update.effective_user.id
+    sub_id, sub = get_sub_for_user(telegram_id)
+
+    if not sub_id:
+        await update.message.reply_text("❌ Tu n'as pas d'abonnement actif.")
+        return
+
+    tier = sub["tier"]
+
+    # Récupérer la date de fin depuis Stripe
+    stripe_sub = stripe_get_subscription(sub_id)
+    date_fin = "inconnue"
+    if stripe_sub:
+        ts = stripe_sub.get("current_period_end")
+        if ts:
+            date_fin = datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
+
+    keyboard = [
+        [InlineKeyboardButton("❌ Oui, perdre mon accès maintenant", callback_data=f"confirmer_resilier_{sub_id}")],
+        [InlineKeyboardButton("✅ Non, garder mon accès", callback_data="annuler_resilier")],
+    ]
+
+    await update.message.reply_text(
+        f"⚠️ *Attention — Résiliation de ton abonnement*\n\n"
+        f"Tu es sur le point d'annuler ton abonnement {TIERS[tier]['nom']}.\n\n"
+        f"Normalement ton accès était garanti jusqu'au *{date_fin}*.\n\n"
+        f"❌ Si tu résilies maintenant, tu perds l'accès *IMMÉDIATEMENT*.\n"
+        f"💸 Aucun remboursement ne sera effectué.\n\n"
+        f"Es-tu vraiment sûr de vouloir perdre ton accès maintenant ?",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_resilier_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    telegram_id = update.effective_user.id
+
+    if query.data == "annuler_resilier":
+        await query.edit_message_text("✅ Bonne décision ! Ton abonnement reste actif.")
+        return
+
+    if query.data.startswith("confirmer_resilier_"):
+        sub_id = query.data.replace("confirmer_resilier_", "")
+        sub_id_check, sub = get_sub_for_user(telegram_id)
+
+        if sub_id_check != sub_id:
+            await query.edit_message_text("❌ Erreur — abonnement introuvable.")
+            return
+
+        await query.edit_message_text("⏳ Résiliation en cours...")
+
+        success = stripe_cancel_subscription(sub_id)
+        if success:
+            await retirer_membre(sub_id)
+            await context.bot.send_message(
+                chat_id=telegram_id,
+                text="😔 Ton abonnement a été résilié. Tu as perdu ton accès immédiatement.\n\nTu peux te réabonner à tout moment avec /start."
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=telegram_id,
+                text="❌ Une erreur s'est produite. Contacte le support."
+            )
+
+# ── Webhook Stripe ────────────────────────────────────────────────────────────
 
 class StripeWebhookHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -146,7 +252,7 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
         event_type = event.get("type")
-        print(f"📨 Événement reçu: {event_type}")
+        print(f"📨 Événement: {event_type}")
 
         if event_type == "checkout.session.completed":
             session = event["data"]["object"]
@@ -155,19 +261,15 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
             subscription_id = session.get("subscription")
             tier = PAYMENT_LINKS.get(payment_link)
 
-            print(f"📦 Paiement — telegram_id: {telegram_id}, tier: {tier}, sub: {subscription_id}")
-
             if telegram_id and tier and subscription_id:
                 asyncio.run_coroutine_threadsafe(
                     ajouter_membre(int(telegram_id), tier, subscription_id),
                     webhook_loop
                 )
-            else:
-                print(f"❌ Manquant — telegram_id: {telegram_id}, tier: {tier}, sub: {subscription_id}")
 
         elif event_type in ("customer.subscription.deleted", "invoice.payment_failed"):
-            subscription_id = event["data"]["object"].get("id") or event["data"]["object"].get("subscription")
-            print(f"🚫 Résiliation/échec — sub: {subscription_id}")
+            obj = event["data"]["object"]
+            subscription_id = obj.get("id") if event_type == "customer.subscription.deleted" else obj.get("subscription")
             if subscription_id:
                 asyncio.run_coroutine_threadsafe(
                     retirer_membre(subscription_id),
@@ -177,23 +279,6 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
 def start_webhook_server():
     server = HTTPServer(("0.0.0.0", 8000), StripeWebhookHandler)
     server.serve_forever()
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = update.effective_user.id
-    keyboard = [
-        [InlineKeyboardButton(
-            f"{TIERS['premium']['nom']} — {TIERS['premium']['prix']}",
-            url=f"{TIERS['premium']['lien']}?client_reference_id={telegram_id}"
-        )],
-        [InlineKeyboardButton(
-            f"{TIERS['vip']['nom']}",
-            url=f"{TIERS['vip']['lien']}?client_reference_id={telegram_id}"
-        )],
-    ]
-    await update.message.reply_text(
-        "🔥 Passe à l'abonnement supérieur !\n\nChoisis ton offre 👇",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
 
 if __name__ == "__main__":
     time.sleep(15)
@@ -209,6 +294,8 @@ if __name__ == "__main__":
         try:
             app = ApplicationBuilder().token(TOKEN).build()
             app.add_handler(CommandHandler("start", start))
+            app.add_handler(CommandHandler("resilier", resilier))
+            app.add_handler(CallbackQueryHandler(handle_resilier_callback))
             print("✅ Bot démarré...")
             app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
         except Conflict:
