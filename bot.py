@@ -92,6 +92,8 @@ async def ajouter_membre(telegram_id: int, tier: str, subscription_id: str):
     bot = Bot(token=TOKEN)
     try:
         data = load_data()
+        # Supprimer ancienne entree pour ce telegram_id
+        data["subscriptions"] = {k: v for k, v in data["subscriptions"].items() if v["telegram_id"] != telegram_id}
         data["subscriptions"][subscription_id] = {"telegram_id": telegram_id, "tier": tier}
         save_data(data)
 
@@ -291,6 +293,7 @@ if __name__ == "__main__":
     print(subprocess.run(["df", "-h"], capture_output=True, text=True).stdout)
     print("LS DATA:", subprocess.run(["ls", "-la", "/data"], capture_output=True, text=True).stdout)
     print("LS APP:", subprocess.run(["ls", "-la", "/app"], capture_output=True, text=True).stdout)
+    print("SUBS:", subprocess.run(["cat", "/data/subscriptions.json"], capture_output=True, text=True).stdout)
     time.sleep(15)
 
     loop_thread = threading.Thread(target=run_webhook_loop, daemon=True)
