@@ -222,17 +222,12 @@ async def handle_resilier_callback(update: Update, context: ContextTypes.DEFAULT
         await query.edit_message_text("⏳ Résiliation en cours...")
 
         success = stripe_cancel_subscription(sub_id)
-        if success:
-            await retirer_membre(sub_id)
-            await context.bot.send_message(
-                chat_id=telegram_id,
-                text="😔 Ton abonnement a été résilié. Tu as perdu ton accès immédiatement.\n\nTu peux te réabonner à tout moment avec /start."
-            )
-        else:
+        if not success:
             await context.bot.send_message(
                 chat_id=telegram_id,
                 text="❌ Une erreur s'est produite. Contacte le support."
             )
+        # Le kick et message sont gérés par le webhook customer.subscription.deleted
 
 # ── Webhook Stripe ────────────────────────────────────────────────────────────
 
