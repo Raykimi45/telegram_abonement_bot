@@ -168,6 +168,7 @@ async def resilier(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Tu n'as pas d'abonnement actif.")
         return
 
+    print(f"🔍 sub_id trouvé: {sub_id}")
     tier = sub["tier"]
 
     # Récupérer la date de fin depuis Stripe
