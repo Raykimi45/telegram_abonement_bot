@@ -6,7 +6,7 @@ import threading
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import Conflict
 import stripe
 
@@ -513,6 +513,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data_cb == "noop":
         pass
 
+# ── Handler temporaire file_id ────────────────────────────────────────────────
+
+async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.photo:
+        file_id = update.message.photo[-1].file_id
+        print(f"📸 file_id reçu: {file_id}")
+        await update.message.reply_text(
+            f"📸 Ton file\_id :\n\n`{file_id}`",
+            parse_mode="Markdown"
+        )
+
 # ── Webhook Stripe ─────────────────────────────────────────────────────────────
 
 class StripeWebhookHandler(BaseHTTPRequestHandler):
@@ -615,6 +626,7 @@ if __name__ == "__main__":
             app = ApplicationBuilder().token(TOKEN).build()
             app.add_handler(CommandHandler("start", start))
             app.add_handler(CallbackQueryHandler(handle_callback))
+            app.add_handler(MessageHandler(filters.PHOTO, get_file_id))  # ← TEMPORAIRE
             print("✅ Bot démarré...")
             app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
         except Conflict:
