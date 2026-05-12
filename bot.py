@@ -6,7 +6,7 @@ import threading
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram.error import Conflict
 import stripe
 
@@ -35,6 +35,12 @@ TIERS = {
         "prix": "19,99€/mois",
         "lien": "https://buy.stripe.com/test_14AdR3bRt55G6M9cNPe3e01",
     }
+}
+
+IMAGES = {
+    "tarifs":  "AgACAgQAAxkBAAN9agMssUQeV1jLojb-69ij0iXD_awAAiwOaxvvlRhQuJV4QXsp0d4BAAMCAAN5AAM7BA",
+    "private": "AgACAgQAAxkBAAN_agMsvW9juzcBzDzl_1nLWqBxXcAAAi0OaxvvlRhQS9mcR9IEb98BAAMCAAN5AAM7BA",
+    "vip":     "AgACAgQAAxkBAAOBagMsxJkf9H1qXuIm5XQ9FfuXpYMAAi4OaxvvlRhQIaouXU2zf9oBAAMCAAN5AAM7BA",
 }
 
 SUBS_FILE = "/data/subscriptions.json"
@@ -227,10 +233,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🩷 PRIVATE — 9,99€/mois", callback_data="page_private")],
         [InlineKeyboardButton("💗 VIP — 19,99€/mois", callback_data="page_vip")],
     ]
-    await update.message.reply_text(
-        "Tu sais déjà pourquoi t'es là. 🔥\n\n"
-        "Après paiement, tu rejoins mon canal privé instantanément 💕\n"
-        "Aucune attente. Accès immédiat.",
+    await update.message.reply_photo(
+        photo=IMAGES["tarifs"],
+        caption=(
+            "Tu sais déjà pourquoi t'es là. 🔥\n\n"
+            "Après paiement, tu rejoins mon canal privé instantanément 💕\n"
+            "Aucune attente. Accès immédiat."
+        ),
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
@@ -252,16 +261,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("💗 Voir le VIP", callback_data="page_vip")],
             [InlineKeyboardButton("👈🏽 Retour", callback_data="page_tarifs")],
         ]
-        await query.edit_message_text(
-            "🩷 PRIVATE — 9,99€/mois\n\n"
-            "Canal KAYLA PRIVATE\n\n"
-            "🩷 Photos & vidéos en lingerie\n"
-            "🩷 Topless exclusifs\n"
-            "🩷 Contenu inédit, jamais publié ailleurs\n"
-            "🩷 Nouveau contenu chaque semaine\n"
-            "🩷 Accès à mes archives privées\n"
-            "❤️‍🔥 Un mois de plaisir rien que pour toi\n\n"
-            "La plupart ne restent pas longtemps au PRIVATE. Une fois qu'ils découvrent le VIP… ils upgradent. 👀",
+        await query.delete_message()
+        await context.bot.send_photo(
+            chat_id=telegram_id,
+            photo=IMAGES["private"],
+            caption=(
+                "🩷 PRIVATE — 9,99€/mois\n\n"
+                "Canal KAYLA PRIVATE\n\n"
+                "🩷 Photos & vidéos en lingerie\n"
+                "🩷 Topless exclusifs\n"
+                "🩷 Contenu inédit, jamais publié ailleurs\n"
+                "🩷 Nouveau contenu chaque semaine\n"
+                "🩷 Accès à mes archives privées\n"
+                "❤️‍🔥 Un mois de plaisir rien que pour toi\n\n"
+                "La plupart ne restent pas longtemps au PRIVATE. Une fois qu'ils découvrent le VIP… ils upgradent. 👀"
+            ),
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -274,16 +288,21 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )],
             [InlineKeyboardButton("👈🏽 Retour", callback_data="page_tarifs")],
         ]
-        await query.edit_message_text(
-            "💗 VIP — 19,99€/mois\n\n"
-            "Canal KAYLA VIP\n\n"
-            "💗 Tout le contenu PRIVATE inclus\n"
-            "💗 Full nude & vidéos exclusives\n"
-            "💗 2x plus de contenu que le PRIVATE\n"
-            "💗 Accès en avant-première à toutes mes nouveautés\n"
-            "💗 Contenu réservé uniquement aux VIP\n"
-            "❤️‍🔥 Une expérience unique & inoubliable\n\n"
-            "Ceux qui ont le VIP ne regardent plus jamais en arrière. 🖤",
+        await query.delete_message()
+        await context.bot.send_photo(
+            chat_id=telegram_id,
+            photo=IMAGES["vip"],
+            caption=(
+                "💗 VIP — 19,99€/mois\n\n"
+                "Canal KAYLA VIP\n\n"
+                "💗 Tout le contenu PRIVATE inclus\n"
+                "💗 Full nude & vidéos exclusives\n"
+                "💗 2x plus de contenu que le PRIVATE\n"
+                "💗 Accès en avant-première à toutes mes nouveautés\n"
+                "💗 Contenu réservé uniquement aux VIP\n"
+                "❤️‍🔥 Une expérience unique & inoubliable\n\n"
+                "Ceux qui ont le VIP ne regardent plus jamais en arrière. 🖤"
+            ),
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -293,10 +312,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🩷 PRIVATE — 9,99€/mois", callback_data="page_private")],
             [InlineKeyboardButton("💗 VIP — 19,99€/mois", callback_data="page_vip")],
         ]
-        await query.edit_message_text(
-            "Tu sais déjà pourquoi t'es là. 🔥\n\n"
-            "Après paiement, tu rejoins mon canal privé instantanément 💕\n"
-            "Aucune attente. Accès immédiat.",
+        await query.delete_message()
+        await context.bot.send_photo(
+            chat_id=telegram_id,
+            photo=IMAGES["tarifs"],
+            caption=(
+                "Tu sais déjà pourquoi t'es là. 🔥\n\n"
+                "Après paiement, tu rejoins mon canal privé instantanément 💕\n"
+                "Aucune attente. Accès immédiat."
+            ),
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -513,17 +537,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data_cb == "noop":
         pass
 
-# ── Handler temporaire file_id ────────────────────────────────────────────────
-
-async def get_file_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.photo:
-        file_id = update.message.photo[-1].file_id
-        print(f"📸 file_id reçu: {file_id}")
-        await update.message.reply_text(
-            f"📸 Ton file\_id :\n\n`{file_id}`",
-            parse_mode="Markdown"
-        )
-
 # ── Webhook Stripe ─────────────────────────────────────────────────────────────
 
 class StripeWebhookHandler(BaseHTTPRequestHandler):
@@ -626,7 +639,6 @@ if __name__ == "__main__":
             app = ApplicationBuilder().token(TOKEN).build()
             app.add_handler(CommandHandler("start", start))
             app.add_handler(CallbackQueryHandler(handle_callback))
-            app.add_handler(MessageHandler(filters.PHOTO, get_file_id))  # ← TEMPORAIRE
             print("✅ Bot démarré...")
             app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
         except Conflict:
