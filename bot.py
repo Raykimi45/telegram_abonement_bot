@@ -5,7 +5,7 @@ import asyncio
 import threading
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ChatMemberHandler, ContextTypes
 from telegram.error import Conflict
 import stripe
@@ -50,16 +50,16 @@ SUBS_FILE = "/data/subscriptions.json"
 def load_data():
     os.makedirs("/data", exist_ok=True)
     if not os.path.exists(SUBS_FILE):
-        return {"subscriptions": {}, "users": {}, "customers": {}, "invite_counts": {}, "pending_msg": {}}
+        return {"subscriptions": {}, "customers": {}, "invite_counts": {}, "pending_msg": {}, "tarifs_msg": {}}
     try:
         with open(SUBS_FILE, "r") as f:
             data = json.load(f)
-            for key in ("subscriptions", "users", "customers", "invite_counts", "pending_msg"):
+            for key in ("subscriptions", "customers", "invite_counts", "pending_msg", "tarifs_msg"):
                 if key not in data:
                     data[key] = {}
             return data
     except Exception:
-        return {"subscriptions": {}, "users": {}, "customers": {}, "invite_counts": {}, "pending_msg": {}}
+        return {"subscriptions": {}, "customers": {}, "invite_counts": {}, "pending_msg": {}, "tarifs_msg": {}}
 
 def save_data(data):
     os.makedirs("/data", exist_ok=True)
@@ -84,6 +84,13 @@ def increment_invite_count(telegram_id: int) -> int:
     save_data(data)
     return data["invite_counts"][key]
 
+async def is_user_in_canal(bot: Bot, telegram_id: int, tier: str) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id=CANAUX[tier], user_id=telegram_id)
+        return member.status in (ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.OWNER)
+    except Exception:
+        return False
+
 # ── Stripe ────────────────────────────────────────────────────────────────────
 
 def stripe_cancel_subscription(subscription_id: str):
@@ -104,12 +111,21 @@ def run_webhook_loop():
     asyncio.set_event_loop(webhook_loop)
     webhook_loop.run_forever()
 
+# ── Helpers UI ────────────────────────────────────────────────────────────────
+
+def keyboard_espace_abo(tier: str):
+    keyboard = []
+    if tier == "premium":
+        keyboard.append([InlineKeyboardButton("⬆️ Upgrader mon abonnement", callback_data="menu_upgrade")])
+    keyboard.append([InlineKeyboardButton("⚙️ Gérer mon abonnement", callback_data="menu_gerer")])
+    return InlineKeyboardMarkup(keyboard)
+
 # ── Actions bot ───────────────────────────────────────────────────────────────
 
 async def ajouter_membre(telegram_id: int, tier: str, subscription_id: str, period_end: int = None):
     bot = Bot(token=TOKEN)
     try:
-        # Sauvegarder avec date de fin
+        # Sauvegarder abonnement
         data = load_data()
         data["subscriptions"] = {k: v for k, v in data["subscriptions"].items() if v["telegram_id"] != telegram_id}
         data["subscriptions"][subscription_id] = {
@@ -117,43 +133,56 @@ async def ajouter_membre(telegram_id: int, tier: str, subscription_id: str, peri
             "tier": tier,
             "period_end": period_end,
         }
+
+        # Supprimer le message de sélection d'abonnement (tarifs_msg)
+        tarifs_msg_id = data["tarifs_msg"].pop(str(telegram_id), None)
         save_data(data)
+
+        if tarifs_msg_id:
+            try:
+                await bot.delete_message(chat_id=telegram_id, message_id=tarifs_msg_id)
+                print(f"🗑️ Message tarifs supprimé pour {telegram_id}")
+            except Exception as e:
+                print(f"⚠️ Suppression tarifs_msg: {e}")
+
         print(f"💾 Sauvegardé: {subscription_id} → {telegram_id} ({tier})")
         print(f"📦 Paiement — telegram_id: {telegram_id}, tier: {tier}, sub: {subscription_id}")
 
-        # Créer lien d'invitation
+        tier_nom = TIERS[tier]["nom"]
+        tier_emoji = "🩷" if tier == "premium" else "💗"
+        tier_short = "PRIVATE" if tier == "premium" else "VIP"
+
+        # Créer lien d'invitation (ne compte PAS dans le compteur)
         invite = await bot.create_chat_invite_link(
             chat_id=CANAUX[tier],
             member_limit=1,
             creates_join_request=False
         )
-        increment_invite_count(telegram_id)
 
-        tier_nom = TIERS[tier]["nom"]
-        tier_emoji = "🩷" if tier == "premium" else "💗"
-
-        # MESSAGE 1 — lien canal (sera supprimé quand l'user rejoint)
+        # Sauvegarder le message_id pour le supprimer quand l'user rejoint
         msg1 = await bot.send_message(
             chat_id=telegram_id,
             text=(
                 f"✅ Paiement confirmé !\n\n"
-                f"Rejoint ton canal {tier_emoji} {tier_nom.split(' ', 1)[1]} ici (lien à usage unique) :\n"
+                f"Rejoint ton canal {tier_emoji} {tier_short} ici (lien à usage unique) :\n"
                 f"{invite.invite_link}"
-            )
+            ),
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔗 Générer un nouveau lien", callback_data="gen_lien_paiement")
+            ]])
         )
 
-        # Sauvegarder le message_id pour le supprimer après entrée canal
         data = load_data()
         data["pending_msg"][str(telegram_id)] = msg1.message_id
         save_data(data)
 
-        print(f"✅ Lien envoyé à {telegram_id} pour {tier}, msg_id: {msg1.message_id}")
+        print(f"✅ Lien paiement envoyé à {telegram_id} pour {tier}, msg_id: {msg1.message_id}")
     except Exception as e:
         print(f"❌ Erreur ajout: {e}")
     finally:
         await bot.shutdown()
 
-async def retirer_membre(subscription_id: str, edit_msg_id: int = None, chat_id: int = None):
+async def retirer_membre(subscription_id: str, edit_msg_id: int = None, edit_chat_id: int = None):
     bot = Bot(token=TOKEN)
     try:
         data = load_data()
@@ -166,41 +195,38 @@ async def retirer_membre(subscription_id: str, edit_msg_id: int = None, chat_id:
         tier = sub["tier"]
         tier_lien = TIERS[tier]["lien"]
 
-        await bot.ban_chat_member(chat_id=CANAUX[tier], user_id=telegram_id)
-        await bot.unban_chat_member(chat_id=CANAUX[tier], user_id=telegram_id)
+        try:
+            await bot.ban_chat_member(chat_id=CANAUX[tier], user_id=telegram_id)
+            await bot.unban_chat_member(chat_id=CANAUX[tier], user_id=telegram_id)
+        except Exception as e:
+            print(f"⚠️ Kick: {e}")
 
-        # Si appelé depuis résiliation manuelle → modifier le message "⏳ en cours"
-        if edit_msg_id and chat_id:
+        msg_annule = (
+            "Ton abonnement a été annulé.\n\n"
+            "Tu n'as plus accès au canal privé de Kayla. 🖤"
+        )
+        kb_reabo = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🩷 Se réabonner", callback_data="page_tarifs_new")
+        ]])
+
+        if edit_msg_id and edit_chat_id:
             try:
                 await bot.edit_message_text(
-                    chat_id=chat_id,
+                    chat_id=edit_chat_id,
                     message_id=edit_msg_id,
-                    text=(
-                        "Ton abonnement a été annulé.\n\n"
-                        "Tu n'as plus accès au canal privé de Kayla. 🖤"
-                    ),
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🩷 Se réabonner", callback_data="page_tarifs_new")
-                    ]])
+                    text=msg_annule,
+                    reply_markup=kb_reabo
                 )
             except Exception as e:
                 print(f"⚠️ Edit msg résiliation: {e}")
+                await bot.send_message(chat_id=telegram_id, text=msg_annule, reply_markup=kb_reabo)
         else:
-            # Résiliation automatique (expiration / paiement échoué)
-            await bot.send_message(
-                chat_id=telegram_id,
-                text=(
-                    "Ton abonnement a été annulé.\n\n"
-                    "Tu n'as plus accès au canal privé de Kayla. 🖤"
-                ),
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🩷 Se réabonner", callback_data="page_tarifs_new")
-                ]])
-            )
+            await bot.send_message(chat_id=telegram_id, text=msg_annule, reply_markup=kb_reabo)
 
         del data["subscriptions"][subscription_id]
         data["invite_counts"].pop(str(telegram_id), None)
         data["pending_msg"].pop(str(telegram_id), None)
+        data["tarifs_msg"].pop(str(telegram_id), None)
         save_data(data)
         print(f"✅ {telegram_id} retiré du canal {tier}")
     except Exception as e:
@@ -208,7 +234,7 @@ async def retirer_membre(subscription_id: str, edit_msg_id: int = None, chat_id:
     finally:
         await bot.shutdown()
 
-# ── ChatMemberHandler — entrée dans le canal ──────────────────────────────────
+# ── ChatMemberHandler ─────────────────────────────────────────────────────────
 
 async def membre_rejoint(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = update.chat_member
@@ -218,45 +244,36 @@ async def membre_rejoint(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = result.new_chat_member.user.id
     chat_id_canal = result.chat.id
 
-    # Vérifier si abonné connu
     sub_id, sub = get_sub_for_user(telegram_id)
     if not sub_id:
-        # Intrus — kick
         await context.bot.ban_chat_member(chat_id=chat_id_canal, user_id=telegram_id)
         await context.bot.unban_chat_member(chat_id=chat_id_canal, user_id=telegram_id)
         print(f"🚫 Intrus kické — telegram_id: {telegram_id}")
         return
 
-    print(f"✅ Entrée canal confirmée — telegram_id: {telegram_id}, tier: {sub['tier']}")
+    print(f"✅ Entrée canal — telegram_id: {telegram_id}, tier: {sub['tier']}")
 
-    # Supprimer message 1 (lien)
+    # Supprimer message 1 (lien de paiement)
     data = load_data()
-    msg_id = data["pending_msg"].get(str(telegram_id))
+    msg_id = data["pending_msg"].pop(str(telegram_id), None)
+    save_data(data)
     if msg_id:
         try:
             await context.bot.delete_message(chat_id=telegram_id, message_id=msg_id)
-            data["pending_msg"].pop(str(telegram_id), None)
-            save_data(data)
         except Exception as e:
             print(f"⚠️ Suppression msg1: {e}")
 
     tier = sub["tier"]
     tier_nom = TIERS[tier]["nom"]
 
-    # Message 2 — bienvenue
+    # Message bienvenue
     await context.bot.send_message(
         chat_id=telegram_id,
         text="Ton accès est activé. Bienvenue de l'autre côté 🖤🔥"
     )
-
     await asyncio.sleep(1.2)
 
-    # Message 3 — gestion abonnement
-    keyboard = []
-    if tier == "premium":
-        keyboard.append([InlineKeyboardButton("⬆️ Upgrader mon abonnement", callback_data="menu_upgrade")])
-    keyboard.append([InlineKeyboardButton("⚙️ Gérer mon abonnement", callback_data="menu_gerer")])
-
+    # Message gestion
     await context.bot.send_message(
         chat_id=telegram_id,
         text=(
@@ -264,10 +281,10 @@ async def membre_rejoint(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Ton abonnement est actif. 💕\n\n"
             f"Que souhaites-tu faire ?"
         ),
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=keyboard_espace_abo(tier)
     )
 
-# ── Commandes bot ─────────────────────────────────────────────────────────────
+# ── /start ────────────────────────────────────────────────────────────────────
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = update.effective_user.id
@@ -277,15 +294,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if sub_id:
         tier = sub["tier"]
         tier_nom = TIERS[tier]["nom"]
-        keyboard = []
-        if tier == "premium":
-            keyboard.append([InlineKeyboardButton("⬆️ Upgrader mon abonnement", callback_data="menu_upgrade")])
-        keyboard.append([InlineKeyboardButton("⚙️ Gérer mon abonnement", callback_data="menu_gerer")])
         await update.message.reply_text(
             f"✅ {tier_nom} actif\n\n"
             f"Ton abonnement est actif. 💕\n\n"
             f"Que souhaites-tu faire ?",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            reply_markup=keyboard_espace_abo(tier)
         )
         return
 
@@ -293,7 +306,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🩷 PRIVATE — 9,99€/mois", callback_data="page_private")],
         [InlineKeyboardButton("💗 VIP — 19,99€/mois", callback_data="page_vip")],
     ]
-    await update.message.reply_photo(
+    msg = await update.message.reply_photo(
         photo=IMAGES["tarifs"],
         caption=(
             "Tu sais déjà pourquoi t'es là. 🔥\n\n"
@@ -302,6 +315,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ),
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+    # Sauvegarder le message_id du message tarifs pour le supprimer au paiement
+    data = load_data()
+    data["tarifs_msg"][str(telegram_id)] = msg.message_id
+    save_data(data)
 
 # ── Callbacks ─────────────────────────────────────────────────────────────────
 
@@ -321,7 +339,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("💗 Voir le VIP", callback_data="page_vip")],
             [InlineKeyboardButton("👈🏽 Retour", callback_data="page_tarifs")],
         ]
-        await context.bot.send_photo(
+        await query.delete_message()
+        msg = await context.bot.send_photo(
             chat_id=telegram_id,
             photo=IMAGES["private"],
             caption=(
@@ -337,7 +356,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        await query.delete_message()
+        # Mettre à jour tarifs_msg avec le nouveau message
+        data = load_data()
+        data["tarifs_msg"][str(telegram_id)] = msg.message_id
+        save_data(data)
 
     # ── PAGE VIP ──
     elif data_cb == "page_vip":
@@ -348,7 +370,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )],
             [InlineKeyboardButton("👈🏽 Retour", callback_data="page_tarifs")],
         ]
-        await context.bot.send_photo(
+        await query.delete_message()
+        msg = await context.bot.send_photo(
             chat_id=telegram_id,
             photo=IMAGES["vip"],
             caption=(
@@ -364,15 +387,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        await query.delete_message()
+        data = load_data()
+        data["tarifs_msg"][str(telegram_id)] = msg.message_id
+        save_data(data)
 
-    # ── PAGE TARIFS (retour depuis photo) ──
+    # ── PAGE TARIFS (retour) ──
     elif data_cb == "page_tarifs":
         keyboard = [
             [InlineKeyboardButton("🩷 PRIVATE — 9,99€/mois", callback_data="page_private")],
             [InlineKeyboardButton("💗 VIP — 19,99€/mois", callback_data="page_vip")],
         ]
-        await context.bot.send_photo(
+        await query.delete_message()
+        msg = await context.bot.send_photo(
             chat_id=telegram_id,
             photo=IMAGES["tarifs"],
             caption=(
@@ -382,20 +408,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        await query.delete_message()
+        data = load_data()
+        data["tarifs_msg"][str(telegram_id)] = msg.message_id
+        save_data(data)
 
-    # ── PAGE TARIFS (depuis bouton Se réabonner — nouveau message) ──
+    # ── SE RÉABONNER → page tarifs (depuis message annulation) ──
     elif data_cb == "page_tarifs_new":
         keyboard = [
             [InlineKeyboardButton("🩷 PRIVATE — 9,99€/mois", callback_data="page_private")],
             [InlineKeyboardButton("💗 VIP — 19,99€/mois", callback_data="page_vip")],
         ]
-        await query.edit_message_text(
-            "Tu sais déjà pourquoi t'es là. 🔥\n\n"
-            "Après paiement, tu rejoins mon canal privé instantanément 💕\n"
-            "Aucune attente. Accès immédiat."
-        )
-        await context.bot.send_photo(
+        await query.delete_message()
+        msg = await context.bot.send_photo(
             chat_id=telegram_id,
             photo=IMAGES["tarifs"],
             caption=(
@@ -405,6 +429,68 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        data = load_data()
+        data["tarifs_msg"][str(telegram_id)] = msg.message_id
+        save_data(data)
+
+    # ── GÉNÉRER LIEN (depuis message paiement confirmé) ──
+    elif data_cb == "gen_lien_paiement":
+        sub_id, sub = get_sub_for_user(telegram_id)
+        if not sub_id:
+            await query.answer("❌ Abonnement introuvable.", show_alert=True)
+            return
+
+        tier = sub["tier"]
+
+        # Vérifier si déjà dans le canal
+        in_canal = await is_user_in_canal(context.bot, telegram_id, tier)
+        if in_canal:
+            await query.answer("✅ Tu es déjà dans le canal !", show_alert=True)
+            return
+
+        count = get_invite_count(telegram_id)
+        if count >= 2:
+            keyboard = [
+                [InlineKeyboardButton("💬 Contacter le support", url=SUPPORT_URL)],
+            ]
+            await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+            await query.answer("⛔ Limite de 2 liens atteinte.", show_alert=True)
+            return
+
+        try:
+            invite = await context.bot.create_chat_invite_link(
+                chat_id=CANAUX[tier],
+                member_limit=1,
+                creates_join_request=False
+            )
+            new_count = increment_invite_count(telegram_id)
+            tier_emoji = "🩷" if tier == "premium" else "💗"
+            tier_short = "PRIVATE" if tier == "premium" else "VIP"
+            print(f"🔗 Nouveau lien généré (paiement) — telegram_id: {telegram_id}, {new_count}/2")
+
+            kb = []
+            if new_count < 2:
+                kb.append([InlineKeyboardButton("🔗 Générer un nouveau lien", callback_data="gen_lien_paiement")])
+            else:
+                kb.append([InlineKeyboardButton("⛔ Limite atteinte — 2/2", callback_data="noop")])
+
+            await query.edit_message_text(
+                f"✅ Paiement confirmé !\n\n"
+                f"Rejoint ton canal {tier_emoji} {tier_short} ici (lien à usage unique) :\n"
+                f"{invite.invite_link}\n\n"
+                f"⚠️ Ce lien est personnel. Ne le partage jamais — ton abonnement serait résilié immédiatement sans remboursement.\n\n"
+                f"🔗 {new_count}/2 liens générés",
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+
+            # Mettre à jour pending_msg
+            data = load_data()
+            data["pending_msg"][str(telegram_id)] = query.message.message_id
+            save_data(data)
+
+        except Exception as e:
+            print(f"❌ Erreur génération lien paiement: {e}")
+            await query.answer("❌ Erreur. Contacte le support.", show_alert=True)
 
     # ── MENU GÉRER ──
     elif data_cb == "menu_gerer":
@@ -429,21 +515,38 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         tier = sub["tier"]
         tier_nom = TIERS[tier]["nom"]
-        keyboard = []
-        if tier == "premium":
-            keyboard.append([InlineKeyboardButton("⬆️ Upgrader mon abonnement", callback_data="menu_upgrade")])
-        keyboard.append([InlineKeyboardButton("⚙️ Gérer mon abonnement", callback_data="menu_gerer")])
         await query.edit_message_text(
             f"✅ {tier_nom} actif\n\n"
             f"Ton abonnement est actif. 💕\n\n"
             f"Que souhaites-tu faire ?",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            reply_markup=keyboard_espace_abo(tier)
         )
 
     # ── ACCÉDER AU CANAL ──
     elif data_cb == "menu_canal":
+        sub_id, sub = get_sub_for_user(telegram_id)
+        if not sub_id:
+            await query.edit_message_text("❌ Tu n'as pas d'abonnement actif.")
+            return
+
+        tier = sub["tier"]
         count = get_invite_count(telegram_id)
         print(f"🔗 Canal — telegram_id: {telegram_id}, liens: {count}/2")
+
+        # Vérifier si déjà dans le canal
+        in_canal = await is_user_in_canal(context.bot, telegram_id, tier)
+        if in_canal:
+            keyboard = [[InlineKeyboardButton("👈🏽 Retour", callback_data="menu_gerer")]]
+            await query.edit_message_text(
+                "✅ Tu es déjà dans le canal !\n\n"
+                "Si tu as un problème, contacte le support.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("💬 Contacter le support", url=SUPPORT_URL)
+                ], [
+                    InlineKeyboardButton("👈🏽 Retour", callback_data="menu_gerer")
+                ]])
+            )
+            return
 
         if count >= 2:
             keyboard = [
@@ -472,8 +575,29 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-    # ── GÉNÉRER LIEN ──
+    # ── GÉNÉRER LIEN (depuis gestion) ──
     elif data_cb == "gen_lien":
+        sub_id, sub = get_sub_for_user(telegram_id)
+        if not sub_id:
+            await query.edit_message_text("❌ Tu n'as pas d'abonnement actif.")
+            return
+
+        tier = sub["tier"]
+
+        # Vérifier si déjà dans le canal
+        in_canal = await is_user_in_canal(context.bot, telegram_id, tier)
+        if in_canal:
+            await query.edit_message_text(
+                "✅ Tu es déjà dans le canal !\n\n"
+                "Si tu as un problème, contacte le support.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("💬 Contacter le support", url=SUPPORT_URL)
+                ], [
+                    InlineKeyboardButton("👈🏽 Retour", callback_data="menu_gerer")
+                ]])
+            )
+            return
+
         count = get_invite_count(telegram_id)
         if count >= 2:
             keyboard = [
@@ -488,12 +612,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        sub_id, sub = get_sub_for_user(telegram_id)
-        if not sub_id:
-            await query.edit_message_text("❌ Tu n'as pas d'abonnement actif.")
-            return
-
-        tier = sub["tier"]
         try:
             invite = await context.bot.create_chat_invite_link(
                 chat_id=CANAUX[tier],
@@ -568,12 +686,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         tier = sub["tier"]
         tier_nom = TIERS[tier]["nom"]
-
-        # Date depuis le JSON local
         period_end = sub.get("period_end")
-        date_fin = "inconnue"
-        if period_end:
-            date_fin = datetime.fromtimestamp(period_end).strftime("%d/%m/%Y")
+        date_fin = datetime.fromtimestamp(period_end).strftime("%d/%m/%Y") if period_end else "inconnue"
 
         keyboard = [
             [InlineKeyboardButton("✅ Non, garder mon accès", callback_data="resilier_non")],
@@ -597,7 +711,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-    # ── RÉSILIER OUI ──
+    # ── RÉSILIER OUI → confirmation finale ──
     elif data_cb.startswith("resilier_oui_"):
         sub_id = data_cb.replace("resilier_oui_", "")
         sub_id_check, sub = get_sub_for_user(telegram_id)
@@ -605,14 +719,39 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ Erreur — abonnement introuvable.")
             return
 
-        # Afficher "en cours" puis modifier après résiliation
+        tier = sub["tier"]
+        tier_nom = TIERS[tier]["nom"]
+        period_end = sub.get("period_end")
+        date_fin = datetime.fromtimestamp(period_end).strftime("%d/%m/%Y") if period_end else "inconnue"
+
+        # Étape de confirmation finale
+        keyboard = [
+            [InlineKeyboardButton("✅ Non, je reste", callback_data="resilier_non")],
+            [InlineKeyboardButton("❌ Oui, confirmer la résiliation", callback_data=f"resilier_confirmer_{sub_id}")],
+        ]
+        await query.edit_message_text(
+            f"⛔ Dernière confirmation\n\n"
+            f"Tu es sur le point de résilier définitivement ton abonnement {tier_nom}.\n\n"
+            f"Ton accès au canal privé sera supprimé *immédiatement*.\n"
+            f"Accès garanti jusqu'au : *{date_fin}*\n\n"
+            f"Cette action est irréversible. Es-tu sûr ?",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    # ── RÉSILIER CONFIRMER (exécution) ──
+    elif data_cb.startswith("resilier_confirmer_"):
+        sub_id = data_cb.replace("resilier_confirmer_", "")
+        sub_id_check, sub = get_sub_for_user(telegram_id)
+        if sub_id_check != sub_id:
+            await query.edit_message_text("❌ Erreur — abonnement introuvable.")
+            return
+
         await query.edit_message_text("⏳ Résiliation en cours…")
         msg_id = query.message.message_id
 
         success = stripe_cancel_subscription(sub_id)
         if success:
-            # Le webhook customer.subscription.deleted va appeler retirer_membre
-            # avec edit_msg_id pour modifier ce message
             data = load_data()
             if sub_id in data["subscriptions"]:
                 data["subscriptions"][sub_id]["resilier_msg_id"] = msg_id
@@ -675,7 +814,6 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
                 save_data(data)
 
             if telegram_id and tier and subscription_id:
-                # Récupérer period_end depuis Stripe
                 period_end = None
                 try:
                     stripe.api_key = STRIPE_SECRET_KEY
@@ -708,7 +846,6 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
                 print(f"✅ sub_id mis à jour: {subscription_id}")
 
         elif event_type == "invoice.payment_succeeded":
-            # Mettre à jour la date de renouvellement
             obj = event["data"]["object"]
             subscription_id = obj.get("subscription")
             if subscription_id:
@@ -721,7 +858,7 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
                         if subscription_id in data["subscriptions"]:
                             data["subscriptions"][subscription_id]["period_end"] = period_end
                             save_data(data)
-                            print(f"🔄 Renouvellement — sub: {subscription_id}, nouvelle date: {datetime.fromtimestamp(period_end).strftime('%d/%m/%Y')}")
+                            print(f"🔄 Renouvellement — sub: {subscription_id}, date: {datetime.fromtimestamp(period_end).strftime('%d/%m/%Y')}")
                 except Exception as e:
                     print(f"⚠️ Erreur update period_end: {e}")
 
@@ -729,13 +866,12 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
             obj = event["data"]["object"]
             subscription_id = obj.get("id") if event_type == "customer.subscription.deleted" else obj.get("subscription")
             if subscription_id:
-                # Récupérer msg_id de résiliation manuelle si existant
                 data = load_data()
                 sub = data["subscriptions"].get(subscription_id, {})
                 edit_msg_id = sub.get("resilier_msg_id")
-                chat_id = sub.get("resilier_chat_id")
+                edit_chat_id = sub.get("resilier_chat_id")
                 asyncio.run_coroutine_threadsafe(
-                    retirer_membre(subscription_id, edit_msg_id, chat_id),
+                    retirer_membre(subscription_id, edit_msg_id, edit_chat_id),
                     webhook_loop
                 )
 
