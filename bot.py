@@ -327,7 +327,6 @@ async def membre_rejoint(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Supprimer message lien paiement
     msg_id = data["pending_msg"].pop(f"{telegram_id}:{tier}", None)
-    data["welcome_sent"][welcome_key] = True
     save_data(data)
 
     if msg_id:
@@ -350,6 +349,11 @@ async def membre_rejoint(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=texte_espace_abo(subs),
         reply_markup=keyboard_espace_abo(subs)
     )
+
+    # Marquer bienvenue envoyé APRÈS l'envoi réussi
+    data = load_data()
+    data["welcome_sent"][welcome_key] = True
+    save_data(data)
 
 # ── /start ────────────────────────────────────────────────────────────────────
 
@@ -465,7 +469,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         in_canal = await is_user_in_canal(context.bot, telegram_id, tier)
         if in_canal:
-            await query.answer("✅ Tu es déjà dans le canal !", show_alert=True)
+            # Déjà dans le canal — proposer gestion
+            subs = get_subs_for_user(telegram_id)
+            await query.edit_message_text(
+                texte_espace_abo(subs),
+                reply_markup=keyboard_espace_abo(subs)
+            )
             return
 
         count = get_invite_count(telegram_id, tier)
