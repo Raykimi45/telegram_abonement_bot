@@ -910,10 +910,10 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
 
         if event_type == "checkout.session.completed":
             session = event["data"]["object"]
-            telegram_id = session.get("client_reference_id")
-            customer_id = session.get("customer")
-            payment_link = session.get("payment_link")
-            subscription_id = session.get("subscription")
+            telegram_id = getattr(session, "client_reference_id", None)
+            customer_id = getattr(session, "customer", None)
+            payment_link = getattr(session, "payment_link", None)
+            subscription_id = getattr(session, "subscription", None)
             tier = PAYMENT_LINKS.get(payment_link)
 
             # Validation du telegram_id
@@ -945,11 +945,16 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
 
         elif event_type == "invoice.payment_succeeded":
             obj = event["data"]["object"]
-            subscription_id = obj.get("subscription")
-            lines = obj.get("lines", {}).get("data", [])
+            subscription_id = getattr(obj, "subscription", None)
+            lines_obj = getattr(obj, "lines", None)
+            if lines_obj is not None:
+                lines = lines_obj.data if hasattr(lines_obj, "data") else []
+            else:
+                lines = []
             period_end = None
             for line in lines:
-                pe = line.get("period", {}).get("end")
+                period_obj = getattr(line, "period", None)
+                pe = getattr(period_obj, "end", None) if period_obj else None
                 if pe:
                     period_end = pe
                     break
@@ -972,7 +977,7 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
         elif event_type == "charge.dispute.created":
             # Anti-fraude chargeback : kick immédiat
             obj = event["data"]["object"]
-            customer_id = obj.get("customer")
+            customer_id = getattr(obj, "customer", None)
             if customer_id:
                 data = load_data()
                 telegram_id = data["customers"].get(customer_id)
@@ -991,7 +996,7 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
 
         elif event_type in ("customer.subscription.deleted", "invoice.payment_failed"):
             obj = event["data"]["object"]
-            subscription_id = obj.get("id") if event_type == "customer.subscription.deleted" else obj.get("subscription")
+            subscription_id = getattr(obj, "id", None) if event_type == "customer.subscription.deleted" else getattr(obj, "subscription", None)
             if subscription_id:
                 asyncio.run_coroutine_threadsafe(
                     retirer_membre(subscription_id),
