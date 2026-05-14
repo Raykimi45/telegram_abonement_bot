@@ -13,16 +13,21 @@ import stripe
 TOKEN = os.getenv("TOKEN")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
-SUPPORT_URL = os.getenv("SUPPORT_URL", "https://t.me/ton_support")
+SUPPORT_URL = os.getenv("SUPPORT_URL", "https://t.me/Help348848bot")
 
-PAYMENT_LINKS = {
-    "plink_1TVXET7U8dMyWbthflB8Pxox": "premium",
-    "plink_1TVXMR7U8dMyWbth22E7uF3n": "vip",
-}
+# Payment Links Stripe (format: "plink_xxx:premium,plink_yyy:vip")
+_raw_payment_links = os.getenv("PAYMENT_LINKS", "")
+PAYMENT_LINKS = {}
+for entry in _raw_payment_links.split(","):
+    entry = entry.strip()
+    if ":" in entry:
+        plink, tier = entry.split(":", 1)
+        PAYMENT_LINKS[plink.strip()] = tier.strip()
 
+# IDs des canaux Telegram
 CANAUX = {
-    "premium": -1003947632446,
-    "vip":     -1003769970686,
+    "premium": int(os.getenv("CANAL_PREMIUM", "-1003947632446")),
+    "vip":     int(os.getenv("CANAL_VIP", "-1003769970686")),
 }
 
 TIERS = {
@@ -31,14 +36,14 @@ TIERS = {
         "short": "PRIVATE",
         "emoji": "🩷",
         "prix": "9,99€/mois",
-        "lien": "https://buy.stripe.com/test_9B6fZb2gTcy8b2p7tve3e00",
+        "lien": os.getenv("PAYMENT_LINK_PREMIUM", ""),
     },
     "vip": {
         "nom": "💗 KAYLA VIP",
         "short": "VIP",
         "emoji": "💗",
         "prix": "19,99€/mois",
-        "lien": "https://buy.stripe.com/test_14AdR3bRt55G6M9cNPe3e01",
+        "lien": os.getenv("PAYMENT_LINK_VIP", ""),
     }
 }
 
@@ -53,36 +58,38 @@ SUBS_FILE = "/data/subscriptions.json"
 # ── Data ──────────────────────────────────────────────────────────────────────
 
 def load_data():
-    os.makedirs("/data", exist_ok=True)
-    if not os.path.exists(SUBS_FILE):
-        return {
-            "subscriptions": {},
-            "customers": {},
-            "invite_counts": {},
-            "pending_msg": {},
-            "pending_link": {},
-            "tarifs_msg": {},
-            "welcome_sent": {},
-            "resilier_ctx": {},
-        }
-    try:
-        with open(SUBS_FILE, "r") as f:
-            data = json.load(f)
-            for key in ("subscriptions", "customers", "invite_counts", "pending_msg",
-                        "pending_link", "tarifs_msg", "welcome_sent", "resilier_ctx"):
-                if key not in data:
-                    data[key] = {}
-            return data
-    except Exception:
-        return {
-            "subscriptions": {}, "customers": {}, "invite_counts": {},
-            "pending_msg": {}, "pending_link": {}, "tarifs_msg": {}, "welcome_sent": {}, "resilier_ctx": {},
-        }
+    with data_lock:
+        os.makedirs("/data", exist_ok=True)
+        if not os.path.exists(SUBS_FILE):
+            return {
+                "subscriptions": {},
+                "customers": {},
+                "invite_counts": {},
+                "pending_msg": {},
+                "pending_link": {},
+                "tarifs_msg": {},
+                "welcome_sent": {},
+                "resilier_ctx": {},
+            }
+        try:
+            with open(SUBS_FILE, "r") as f:
+                data = json.load(f)
+                for key in ("subscriptions", "customers", "invite_counts", "pending_msg",
+                            "pending_link", "tarifs_msg", "welcome_sent", "resilier_ctx"):
+                    if key not in data:
+                        data[key] = {}
+                return data
+        except Exception:
+            return {
+                "subscriptions": {}, "customers": {}, "invite_counts": {},
+                "pending_msg": {}, "pending_link": {}, "tarifs_msg": {}, "welcome_sent": {}, "resilier_ctx": {},
+            }
 
 def save_data(data):
-    os.makedirs("/data", exist_ok=True)
-    with open(SUBS_FILE, "w") as f:
-        json.dump(data, f)
+    with data_lock:
+        os.makedirs("/data", exist_ok=True)
+        with open(SUBS_FILE, "w") as f:
+            json.dump(data, f)
 
 def get_subs_for_user(telegram_id: int) -> dict:
     data = load_data()
@@ -130,6 +137,7 @@ def stripe_cancel_subscription(subscription_id: str):
 
 # ── Async loop (webhook) ──────────────────────────────────────────────────────
 
+data_lock = threading.Lock()
 webhook_loop = asyncio.new_event_loop()
 
 def run_webhook_loop():
@@ -186,8 +194,8 @@ async def ajouter_membre(telegram_id: int, tier: str, subscription_id: str, peri
             if msg_id_to_del:
                 try:
                     await bot.delete_message(chat_id=telegram_id, message_id=msg_id_to_del)
-                except Exception as e:
-                    print(f"⚠️ Suppression msg: {e}")
+                except Exception:
+                    pass  # Message déjà supprimé
         print(f"💾 Sauvegardé: {subscription_id} → {telegram_id} ({tier})")
         invite = await bot.create_chat_invite_link(
             chat_id=CANAUX[tier],
@@ -227,7 +235,6 @@ async def retirer_membre(subscription_id: str):
             return
         telegram_id = sub["telegram_id"]
         tier = sub["tier"]
-        tier_lien = TIERS[tier]["lien"]
         try:
             await bot.ban_chat_member(chat_id=CANAUX[tier], user_id=telegram_id)
             await bot.unban_chat_member(chat_id=CANAUX[tier], user_id=telegram_id)
@@ -300,8 +307,29 @@ async def membre_rejoint(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not sub_id:
         await context.bot.ban_chat_member(chat_id=chat_id_canal, user_id=telegram_id)
         await context.bot.unban_chat_member(chat_id=chat_id_canal, user_id=telegram_id)
-        print(f"🚫 Intrus kické — telegram_id: {telegram_id}, tier: {tier}")
+        print(f"🚫 Intrus kické (pas d'abonnement local) — telegram_id: {telegram_id}, tier: {tier}")
         return
+
+    # Vérification Stripe en temps réel — s'assurer que l'abonnement est toujours actif
+    try:
+        stripe.api_key = STRIPE_SECRET_KEY
+        stripe_sub = stripe.Subscription.retrieve(sub_id)
+        stripe_status = getattr(stripe_sub, "status", None)
+        if stripe_status not in ("active", "trialing"):
+            print(f"🚫 Abonnement Stripe inactif ({stripe_status}) — kick {telegram_id}, tier: {tier}")
+            await context.bot.ban_chat_member(chat_id=chat_id_canal, user_id=telegram_id)
+            await context.bot.unban_chat_member(chat_id=chat_id_canal, user_id=telegram_id)
+            # Nettoyer les données locales
+            data = load_data()
+            data["subscriptions"].pop(sub_id, None)
+            data["invite_counts"].pop(f"{telegram_id}:{tier}", None)
+            data["pending_msg"].pop(f"{telegram_id}:{tier}", None)
+            data["welcome_sent"].pop(f"{telegram_id}:{tier}", None)
+            save_data(data)
+            return
+        print(f"✅ Abonnement Stripe vérifié ({stripe_status}) — telegram_id: {telegram_id}, tier: {tier}")
+    except Exception as e:
+        print(f"⚠️ Vérification Stripe échouée (on laisse entrer): {e}")
     print(f"✅ Entrée canal — telegram_id: {telegram_id}, tier: {tier}")
     data = load_data()
     welcome_key = f"{telegram_id}:{tier}"
@@ -1011,17 +1039,32 @@ def start_webhook_server():
 
 if __name__ == "__main__":
     import subprocess
+
+    # Check variables critiques au démarrage
+    if not PAYMENT_LINKS:
+        print("❌ FATAL: variable d'env PAYMENT_LINKS non définie ou vide — le bot ne pourra pas traiter les paiements")
+    else:
+        print(f"✅ PAYMENT_LINKS chargés: {PAYMENT_LINKS}")
+    if not TOKEN:
+        print("❌ FATAL: TOKEN non défini")
+    if not STRIPE_SECRET_KEY:
+        print("❌ FATAL: STRIPE_SECRET_KEY non défini")
+    if not STRIPE_WEBHOOK_SECRET:
+        print("❌ FATAL: STRIPE_WEBHOOK_SECRET non défini")
+
     print(subprocess.run(["df", "-h"], capture_output=True, text=True).stdout)
     print("LS DATA:", subprocess.run(["ls", "-la", "/data"], capture_output=True, text=True).stdout)
     print("SUBS:", subprocess.run(["cat", "/data/subscriptions.json"], capture_output=True, text=True).stdout)
-    time.sleep(15)
 
+    # Démarrer webhook avant le sleep pour ne pas rater d'événements Stripe
     loop_thread = threading.Thread(target=run_webhook_loop, daemon=True)
     loop_thread.start()
 
     webhook_thread = threading.Thread(target=start_webhook_server, daemon=True)
     webhook_thread.start()
     print("✅ Serveur webhook démarré sur le port 8000")
+
+    time.sleep(15)  # Laisser Railway terminer le déploiement avant de poller Telegram
 
     while True:
         try:
