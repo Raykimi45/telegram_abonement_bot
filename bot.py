@@ -219,10 +219,7 @@ async def ajouter_membre(telegram_id: int, tier: str, subscription_id: str, peri
                 f"✅ Paiement confirmé !\n\n"
                 f"Rejoint ton canal {tier_emoji} {tier_short} ici (lien à usage unique) :\n"
                 f"{invite.invite_link}"
-            ),
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔗 Générer un nouveau lien", callback_data=f"gen_lien_paiement_{tier}")
-            ]])
+            )
         )
 
         data = load_data()
