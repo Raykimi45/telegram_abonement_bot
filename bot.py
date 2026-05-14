@@ -250,7 +250,7 @@ async def retirer_membre(subscription_id: str):
         if subs_restants:
             kb_annule = InlineKeyboardMarkup(
                 [[InlineKeyboardButton("🩷 Se réabonner", callback_data="page_tarifs_new")]]
-                + keyboard_espace_abo(subs_restants).inline_keyboard
+                + [list(row) for row in keyboard_espace_abo(subs_restants).inline_keyboard]
             )
         else:
             kb_annule = kb_reabo
