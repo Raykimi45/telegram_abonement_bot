@@ -905,7 +905,7 @@ class StripeWebhookHandler(BaseHTTPRequestHandler):
             self.send_response(400); self.end_headers(); return
 
         self.send_response(200); self.end_headers()
-        event_type = event.get("type")
+        event_type = event["type"]
         print(f"📨 Événement: {event_type}")
 
         if event_type == "checkout.session.completed":
