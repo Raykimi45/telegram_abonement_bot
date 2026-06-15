@@ -6,7 +6,7 @@ import threading
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ChatMemberHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ChatMemberHandler, ContextTypes
 from telegram.error import Conflict
 import stripe
 
@@ -40,8 +40,8 @@ TIERS = {
 }
 
 IMAGES = {
-    "tarifs":  "AgACAgQAAxkBAAIBnGovvLL1RS7DyLCh8lWJxgHOuHwHAAJwDWsbECeBUcxC0FvOQDhSAQADAgADeQADPAQ",
-    "premium": "AgACAgQAAxkBAAIBmmovvKbLyEOHZDIvip5Y-aUCmZDbAAJvDWsbECeBUQg2wxWX1j4pAQADAgADeQADPAQ",
+    "tarifs":  "AgACAgQAAxkBAAMCai_nuflXuYe0d8jsHAPEvEw71vIAAlwPaxs6KoFRU6PCZbofJGkBAAMCAAN3AAM8BA",
+    "premium": "AgACAgQAAxkBAAMEai_nyNiPohLk1Q30rT_qOu3OBPsAAl0Paxs6KoFRO-DA3dpcmIkBAAMCAAN3AAM8BA",
 }
 
 SUBS_FILE = "/data/subscriptions.json"
@@ -963,14 +963,6 @@ def start_webhook_server():
     server = HTTPServer(("0.0.0.0", 8000), StripeWebhookHandler)
     server.serve_forever()
 
-# ── Handler photo temporaire (à supprimer après récupération des file_id) ──────
-
-async def get_photo_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    photo = update.message.photo[-1]
-    file_id = photo.file_id
-    print(f"📸 FILE ID: {file_id}")
-    await update.message.reply_text(f"📸 File ID:\n`{file_id}`", parse_mode="Markdown")
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -1008,7 +1000,6 @@ if __name__ == "__main__":
             app.add_handler(CommandHandler("start", start))
             app.add_handler(CallbackQueryHandler(handle_callback))
             app.add_handler(ChatMemberHandler(membre_rejoint, ChatMemberHandler.CHAT_MEMBER))
-            app.add_handler(MessageHandler(filters.PHOTO, get_photo_id))  # TEMPORAIRE
             print("✅ Bot démarré...")
             app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
         except Conflict:
