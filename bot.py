@@ -6,7 +6,7 @@ import threading
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMember
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ChatMemberHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ChatMemberHandler, MessageHandler, filters, ContextTypes
 from telegram.error import Conflict
 import stripe
 
@@ -15,7 +15,7 @@ STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 SUPPORT_URL = os.getenv("SUPPORT_URL", "https://t.me/Help348848bot")
 
-# Payment Links Stripe (format: "plink_xxx:premium,plink_yyy:vip")
+# Payment Links Stripe (format: "plink_xxx:premium")
 _raw_payment_links = os.getenv("PAYMENT_LINKS", "")
 PAYMENT_LINKS = {}
 for entry in _raw_payment_links.split(","):
@@ -27,7 +27,6 @@ for entry in _raw_payment_links.split(","):
 # IDs des canaux Telegram
 CANAUX = {
     "premium": int(os.getenv("CANAL_PREMIUM", "-1003947632446")),
-    "vip":     int(os.getenv("CANAL_VIP", "-1003769970686")),
 }
 
 TIERS = {
@@ -38,19 +37,11 @@ TIERS = {
         "prix": "9,99€/mois",
         "lien": os.getenv("PAYMENT_LINK_PREMIUM", ""),
     },
-    "vip": {
-        "nom": "💗 KAYLA VIP",
-        "short": "VIP",
-        "emoji": "💗",
-        "prix": "19,99€/mois",
-        "lien": os.getenv("PAYMENT_LINK_VIP", ""),
-    }
 }
 
 IMAGES = {
     "tarifs":  "AgACAgQAAxkBAAN9agMssUQeV1jLojb-69ij0iXD_awAAiwOaxvvlRhQuJV4QXsp0d4BAAMCAAN5AAM7BA",
     "premium": "AgACAgQAAxkBAAN_agMsvW9juzcBzDzl_1nLWqBxXcAAAi0OaxvvlRhQS9mcR9IEb98BAAMCAAN5AAM7BA",
-    "vip":     "AgACAgQAAxkBAAOBagMsxJkf9H1qXuIm5XQ9FfuXpYMAAi4OaxvvlRhQIaouXU2zf9oBAAMCAAN5AAM7BA",
 }
 
 SUBS_FILE = "/data/subscriptions.json"
@@ -148,31 +139,14 @@ def run_webhook_loop():
 
 def keyboard_espace_abo(subs: dict) -> InlineKeyboardMarkup:
     keyboard = []
-    tiers_actifs = [sub["tier"] for sub in subs.values()]
-    if "premium" in tiers_actifs and "vip" not in tiers_actifs:
-        keyboard.append([InlineKeyboardButton("⬆️ Upgrader vers le VIP", callback_data="menu_upgrade")])
-    if len(tiers_actifs) == 1:
-        keyboard.append([InlineKeyboardButton("⚙️ Gérer mon abonnement", callback_data=f"menu_gerer_{tiers_actifs[0]}")])
-    else:
-        keyboard.append([InlineKeyboardButton("⚙️ Gérer PRIVATE", callback_data="menu_gerer_premium")])
-        keyboard.append([InlineKeyboardButton("⚙️ Gérer VIP", callback_data="menu_gerer_vip")])
+    keyboard.append([InlineKeyboardButton("⚙️ Gérer mon abonnement", callback_data="menu_gerer_premium")])
     return InlineKeyboardMarkup(keyboard)
 
 def texte_espace_abo(subs: dict) -> str:
-    tiers_actifs = [sub["tier"] for sub in subs.values()]
-    if len(tiers_actifs) == 2:
-        return (
-            "✅ 🩷 KAYLA PRIVATE actif\n"
-            "✅ 💗 KAYLA VIP actif\n\n"
-            "Tes 2 abonnements sont actifs. 💕\n\n"
-            "Que souhaites-tu faire ?"
-        )
-    tier = tiers_actifs[0]
-    tier_nom = TIERS[tier]["nom"]
     return (
-        f"✅ {tier_nom} actif\n\n"
-        f"Ton abonnement est actif. 💕\n\n"
-        f"Que souhaites-tu faire ?"
+        "✅ 🩷 KAYLA PRIVATE actif\n\n"
+        "Ton abonnement est actif. 💕\n\n"
+        "Que souhaites-tu faire ?"
     )
 
 # ── Actions bot ───────────────────────────────────────────────────────────────
@@ -387,7 +361,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     keyboard = [
         [InlineKeyboardButton("🩷 PRIVATE — 9,99€/mois", callback_data="page_premium")],
-        [InlineKeyboardButton("💗 VIP — 19,99€/mois", callback_data="page_vip")],
     ]
     msg = await update.message.reply_photo(
         photo=IMAGES["tarifs"],
@@ -414,7 +387,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data_cb == "page_premium":
         keyboard = [
             [InlineKeyboardButton("🔓 Accéder au canal PRIVATE", url=f"{TIERS['premium']['lien']}?client_reference_id={telegram_id}")],
-            [InlineKeyboardButton("💗 Voir le VIP", callback_data="page_vip")],
             [InlineKeyboardButton("👈🏽 Retour", callback_data="page_tarifs")],
         ]
         await query.delete_message()
@@ -424,29 +396,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "🩷 PRIVATE — 9,99€/mois\n\nCanal KAYLA PRIVATE\n\n"
                 "🩷 Photos & vidéos en lingerie\n🩷 Topless exclusifs\n"
                 "🩷 Contenu inédit, jamais publié ailleurs\n🩷 Nouveau contenu chaque semaine\n"
-                "🩷 Accès à mes archives privées\n❤️‍🔥 Un mois de plaisir rien que pour toi\n\n"
-                "La plupart ne restent pas longtemps au PRIVATE. Une fois qu'ils découvrent le VIP… ils upgradent. 👀"
-            ),
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        data = load_data()
-        data["tarifs_msg"][str(telegram_id)] = msg.message_id
-        save_data(data)
-
-    elif data_cb == "page_vip":
-        keyboard = [
-            [InlineKeyboardButton("🔓 Accéder au canal VIP", url=f"{TIERS['vip']['lien']}?client_reference_id={telegram_id}")],
-            [InlineKeyboardButton("👈🏽 Retour", callback_data="page_tarifs")],
-        ]
-        await query.delete_message()
-        msg = await context.bot.send_photo(
-            chat_id=telegram_id, photo=IMAGES["vip"],
-            caption=(
-                "💗 VIP — 19,99€/mois\n\nCanal KAYLA VIP\n\n"
-                "💗 Tout le contenu PRIVATE inclus\n💗 Full nude & vidéos exclusives\n"
-                "💗 2x plus de contenu que le PRIVATE\n💗 Accès en avant-première à toutes mes nouveautés\n"
-                "💗 Contenu réservé uniquement aux VIP\n❤️‍🔥 Une expérience unique & inoubliable\n\n"
-                "Ceux qui ont le VIP ne regardent plus jamais en arrière. 🖤"
+                "🩷 Accès à mes archives privées\n❤️‍🔥 Un mois de plaisir rien que pour toi"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -457,7 +407,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data_cb in ("page_tarifs", "page_tarifs_new"):
         keyboard = [
             [InlineKeyboardButton("🩷 PRIVATE — 9,99€/mois", callback_data="page_premium")],
-            [InlineKeyboardButton("💗 VIP — 19,99€/mois", callback_data="page_vip")],
         ]
         await query.delete_message()
         msg = await context.bot.send_photo(
@@ -805,27 +754,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
         )
 
-    elif data_cb == "menu_upgrade":
-        data = load_data()
-        bvn_id = data["tarifs_msg"].pop(f"bvn_{telegram_id}:premium", None)
-        save_data(data)
-        if bvn_id:
-            try:
-                await context.bot.delete_message(chat_id=telegram_id, message_id=bvn_id)
-            except Exception:
-                pass
-        await query.edit_message_text(
-            "⬆️ Upgrader vers le VIP\n\n"
-            "Tu es actuellement en PRIVATE.\n"
-            "Passe au VIP et accède à tout le contenu exclusif. 🔥\n\n"
-            "💗 Full nude & vidéos longues\n💗 2x plus de contenu\n💗 Accès prioritaire aux nouveautés\n\n"
-            "+10€/mois seulement",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔓 Passer au VIP maintenant", url=f"{TIERS['vip']['lien']}?client_reference_id={telegram_id}")],
-                [InlineKeyboardButton("👈🏽 Retour", callback_data="menu_retour_abo")],
-            ])
-        )
-
     elif data_cb.startswith("menu_resilier_"):
         tier = data_cb.replace("menu_resilier_", "")
         sub_id, sub = get_sub_by_tier(telegram_id, tier)
@@ -1035,6 +963,14 @@ def start_webhook_server():
     server = HTTPServer(("0.0.0.0", 8000), StripeWebhookHandler)
     server.serve_forever()
 
+# ── Handler photo temporaire (à supprimer après récupération des file_id) ──────
+
+async def get_photo_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    photo = update.message.photo[-1]
+    file_id = photo.file_id
+    print(f"📸 FILE ID: {file_id}")
+    await update.message.reply_text(f"📸 File ID:\n`{file_id}`", parse_mode="Markdown")
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -1072,6 +1008,7 @@ if __name__ == "__main__":
             app.add_handler(CommandHandler("start", start))
             app.add_handler(CallbackQueryHandler(handle_callback))
             app.add_handler(ChatMemberHandler(membre_rejoint, ChatMemberHandler.CHAT_MEMBER))
+            app.add_handler(MessageHandler(filters.PHOTO, get_photo_id))  # TEMPORAIRE
             print("✅ Bot démarré...")
             app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
         except Conflict:
