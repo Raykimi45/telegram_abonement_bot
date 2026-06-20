@@ -34,7 +34,7 @@ TIERS = {
         "nom": "🩷 KAYLA PRIVATE",
         "short": "PRIVATE",
         "emoji": "🩷",
-        "prix": "9,99€/mois",
+        "prix": "$12/month",
         "lien": os.getenv("PAYMENT_LINK_PREMIUM", ""),
     },
 }
@@ -139,14 +139,14 @@ def run_webhook_loop():
 
 def keyboard_espace_abo(subs: dict) -> InlineKeyboardMarkup:
     keyboard = []
-    keyboard.append([InlineKeyboardButton("⚙️ Gérer mon abonnement", callback_data="menu_gerer_premium")])
+    keyboard.append([InlineKeyboardButton("⚙️ Manage my subscription", callback_data="menu_gerer_premium")])
     return InlineKeyboardMarkup(keyboard)
 
 def texte_espace_abo(subs: dict) -> str:
     return (
-        "✅ 🩷 KAYLA PRIVATE actif\n\n"
-        "Ton abonnement est actif. 💕\n\n"
-        "Que souhaites-tu faire ?"
+        "✅ 🩷 KAYLA PRIVATE active\n\n"
+        "Your subscription is active. 💕\n\n"
+        "What would you like to do?"
     )
 
 # ── Actions bot ───────────────────────────────────────────────────────────────
@@ -181,12 +181,12 @@ async def ajouter_membre(telegram_id: int, tier: str, subscription_id: str, peri
         msg1 = await bot.send_message(
             chat_id=telegram_id,
             text=(
-                f"✅ Paiement confirmé !\n\n"
-                f"Rejoint ton canal {tier_emoji} {tier_short} ici (lien à usage unique) :\n"
+                f"✅ Payment confirmed!\n\n"
+                f"Join your {tier_emoji} {tier_short} channel here (one-time use link):\n"
                 f"{invite.invite_link}"
             ),
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("❓ Je n'arrive pas à rejoindre", callback_data=f"aide_rejoindre_{tier}")
+                InlineKeyboardButton("❓ I can't join", callback_data=f"aide_rejoindre_{tier}")
             ]])
         )
         data = load_data()
@@ -215,11 +215,11 @@ async def retirer_membre(subscription_id: str):
         except Exception as e:
             print(f"⚠️ Kick: {e}")
         msg_annule = (
-            f"Ton abonnement {TIERS[tier]['nom']} a été annulé.\n\n"
-            f"Tu n'as plus accès au canal privé. 🖤"
+            f"Your {TIERS[tier]['nom']} subscription has been cancelled.\n\n"
+            f"You no longer have access to the private channel. 🖤"
         )
         kb_reabo = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🩷 Se réabonner", callback_data="page_tarifs_new")
+            InlineKeyboardButton("🩷 Resubscribe", callback_data="page_tarifs_new")
         ]])
         ctx = data["resilier_ctx"].pop(subscription_id, None)
         del data["subscriptions"][subscription_id]
@@ -230,7 +230,7 @@ async def retirer_membre(subscription_id: str):
         subs_restants = get_subs_for_user(telegram_id)
         if subs_restants:
             kb_annule = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🩷 Se réabonner", callback_data="page_tarifs_new")]]
+                [[InlineKeyboardButton("🩷 Resubscribe", callback_data="page_tarifs_new")]]
                 + [list(row) for row in keyboard_espace_abo(subs_restants).inline_keyboard]
             )
         else:
@@ -319,7 +319,7 @@ async def membre_rejoint(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"⚠️ Suppression msg lien: {e}")
     bvn_msg = await context.bot.send_message(
         chat_id=telegram_id,
-        text="Ton accès est activé. Bienvenue de l'autre côté 🖤🔥"
+        text="Your access is now active. Welcome to the other side 🖤🔥"
     )
     data = load_data()
     data["tarifs_msg"][f"bvn_{telegram_id}:{tier}"] = bvn_msg.message_id
@@ -360,14 +360,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_data(data)
         return
     keyboard = [
-        [InlineKeyboardButton("🩷 PRIVATE — 9,99€/mois", callback_data="page_premium")],
+        [InlineKeyboardButton("🩷 PRIVATE — $12/month", callback_data="page_premium")],
     ]
     msg = await update.message.reply_photo(
         photo=IMAGES["tarifs"],
         caption=(
-            "Tu sais déjà pourquoi t'es là. 🔥\n\n"
-            "Après paiement, tu rejoins mon canal privé instantanément 💕\n"
-            "Aucune attente. Accès immédiat."
+            "You already know why you're here. 🔥\n\n"
+            "After payment, you'll join my private channel instantly 💕\n"
+            "No waiting. Instant access."
         ),
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
@@ -386,17 +386,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data_cb == "page_premium":
         keyboard = [
-            [InlineKeyboardButton("🔓 Accéder au canal PRIVATE", url=f"{TIERS['premium']['lien']}?client_reference_id={telegram_id}")],
-            [InlineKeyboardButton("👈🏽 Retour", callback_data="page_tarifs")],
+            [InlineKeyboardButton("🔓 Access PRIVATE channel", url=f"{TIERS['premium']['lien']}?client_reference_id={telegram_id}")],
+            [InlineKeyboardButton("👈🏽 Back", callback_data="page_tarifs")],
         ]
         await query.delete_message()
         msg = await context.bot.send_photo(
             chat_id=telegram_id, photo=IMAGES["premium"],
             caption=(
-                "🩷 PRIVATE — 9,99€/mois\n\nCanal KAYLA PRIVATE\n\n"
-                "🩷 Photos & vidéos en lingerie\n🩷 Topless exclusifs\n"
-                "🩷 Contenu inédit, jamais publié ailleurs\n🩷 Nouveau contenu chaque semaine\n"
-                "🩷 Accès à mes archives privées\n❤️‍🔥 Un mois de plaisir rien que pour toi"
+                "🩷 PRIVATE — $12/month\n\nKAYLA PRIVATE channel\n\n"
+                "🩷 Exclusive photos & videos\n🩷 Premium exclusive content\n"
+                "🩷 Original content, never posted anywhere else\n🩷 New content every week\n"
+                "🩷 Access to my private archives\n❤️‍🔥 A month of content just for you"
             ),
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -406,15 +406,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data_cb in ("page_tarifs", "page_tarifs_new"):
         keyboard = [
-            [InlineKeyboardButton("🩷 PRIVATE — 9,99€/mois", callback_data="page_premium")],
+            [InlineKeyboardButton("🩷 PRIVATE — $12/month", callback_data="page_premium")],
         ]
         await query.delete_message()
         msg = await context.bot.send_photo(
             chat_id=telegram_id, photo=IMAGES["tarifs"],
             caption=(
-                "Tu sais déjà pourquoi t'es là. 🔥\n\n"
-                "Après paiement, tu rejoins mon canal privé instantanément 💕\n"
-                "Aucune attente. Accès immédiat."
+                "You already know why you're here. 🔥\n\n"
+                "After payment, you'll join my private channel instantly 💕\n"
+                "No waiting. Instant access."
             ),
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
@@ -431,25 +431,23 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         in_canal = await is_user_in_canal(context.bot, telegram_id, tier)
         if in_canal:
             await query.edit_message_text(
-                "✅ Tu es déjà dans le canal !\n\nSi tu as un problème d'accès, contacte le support.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Contacter le support", url=SUPPORT_URL)]])
+                "✅ You're already in the channel!"
             )
             return
         count = get_invite_count(telegram_id, tier)
         if count >= 2:
             await query.edit_message_text(
-                "⛔ Limite atteinte\n\nTu as déjà généré 2 liens d'invitation.\n\nContacte le support.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Contacter le support", url=SUPPORT_URL)]])
+                "⛔ Limit reached\n\nYou've already generated 2 invite links."
             )
             return
         await query.edit_message_text(
-            f"🔗 Générer un nouveau lien d'invitation\n\n"
-            f"⚠️ Ce lien sera à usage unique et personnel.\n"
-            f"Ne le partage jamais — ton abonnement serait résilié immédiatement sans remboursement.\n\n"
-            f"Tu as {count}/2 liens générés. Confirmes-tu ?",
+            f"🔗 Generate a new invite link\n\n"
+            f"⚠️ This link is single-use and personal.\n"
+            f"Never share it — your subscription would be cancelled immediately with no refund.\n\n"
+            f"You have {count}/2 links generated. Confirm?",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Oui, générer le lien", callback_data=f"gen_lien_paiement_ok_{tier}")],
-                [InlineKeyboardButton("❌ Annuler", callback_data=f"gen_lien_paiement_cancel_{tier}")],
+                [InlineKeyboardButton("✅ Yes, generate the link", callback_data=f"gen_lien_paiement_ok_{tier}")],
+                [InlineKeyboardButton("❌ Cancel", callback_data=f"gen_lien_paiement_cancel_{tier}")],
             ])
         )
 
@@ -457,20 +455,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tier = data_cb.replace("gen_lien_paiement_ok_", "")
         sub_id, sub = get_sub_by_tier(telegram_id, tier)
         if not sub_id:
-            await query.edit_message_text("❌ Abonnement introuvable.")
+            await query.edit_message_text("❌ Subscription not found.")
             return
         in_canal = await is_user_in_canal(context.bot, telegram_id, tier)
         if in_canal:
             await query.edit_message_text(
-                f"✅ Tu es déjà dans le canal !\n\nContacte le support si problème.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Contacter le support", url=SUPPORT_URL)]])
+                f"✅ You're already in the channel!"
             )
             return
         count = get_invite_count(telegram_id, tier)
         if count >= 2:
             await query.edit_message_text(
-                "⛔ Limite atteinte\n\nContacte le support.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Support", url=SUPPORT_URL)]])
+                "⛔ Limit reached"
             )
             return
         try:
@@ -481,15 +477,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tier_short = TIERS[tier]["short"]
             kb = []
             if new_count < 2:
-                kb.append([InlineKeyboardButton("🔗 Générer un nouveau lien", callback_data=f"gen_lien_paiement_{tier}")])
+                kb.append([InlineKeyboardButton("🔗 Generate a new link", callback_data=f"gen_lien_paiement_{tier}")])
             else:
-                kb.append([InlineKeyboardButton("⛔ Limite atteinte — 2/2", callback_data="noop")])
+                kb.append([InlineKeyboardButton("⛔ Limit reached — 2/2", callback_data="noop")])
             await query.edit_message_text(
-                f"✅ Paiement confirmé !\n\n"
-                f"Rejoint ton canal {tier_emoji} {tier_short} ici (lien à usage unique) :\n"
+                f"✅ Payment confirmed!\n\n"
+                f"Join your {tier_emoji} {tier_short} channel here (one-time use link):\n"
                 f"{invite.invite_link}\n\n"
-                f"⚠️ Ce lien est personnel. Ne le partage jamais.\n\n"
-                f"{dots} {new_count}/2 liens générés",
+                f"⚠️ This link is personal. Never share it.\n\n"
+                f"{dots} {new_count}/2 links generated",
                 reply_markup=InlineKeyboardMarkup(kb)
             )
             data = load_data()
@@ -499,7 +495,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_data(data)
         except Exception as e:
             print(f"❌ Erreur génération lien paiement: {e}")
-            await query.answer("❌ Erreur. Contacte le support.", show_alert=True)
+            await query.answer("❌ Error.", show_alert=True)
 
     elif data_cb.startswith("gen_lien_paiement_cancel_"):
         tier = data_cb.replace("gen_lien_paiement_cancel_", "")
@@ -510,19 +506,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pending_link = data.get("pending_link", {}).get(f"{telegram_id}:{tier}", None)
         kb = []
         if count < 2:
-            kb.append([InlineKeyboardButton("🔗 Générer un nouveau lien", callback_data=f"gen_lien_paiement_{tier}")])
+            kb.append([InlineKeyboardButton("🔗 Generate a new link", callback_data=f"gen_lien_paiement_{tier}")])
         else:
-            kb.append([InlineKeyboardButton("⛔ Limite atteinte — 2/2", callback_data="noop")])
+            kb.append([InlineKeyboardButton("⛔ Limit reached — 2/2", callback_data="noop")])
         if pending_link:
             texte = (
-                f"✅ Paiement confirmé !\n\n"
-                f"Rejoint ton canal {tier_emoji} {tier_short} ici :\n"
-                f"{pending_link}\n\n🔗 {count}/2 liens générés"
+                f"✅ Payment confirmed!\n\n"
+                f"Join your {tier_emoji} {tier_short} channel here:\n"
+                f"{pending_link}\n\n🔗 {count}/2 links generated"
             )
         else:
             texte = (
-                f"✅ Paiement confirmé !\n\n"
-                f"Utilise le bouton ci-dessous pour générer ton lien.\n\n🔗 {count}/2 liens générés"
+                f"✅ Payment confirmed!\n\n"
+                f"Use the button below to generate your link.\n\n🔗 {count}/2 links generated"
             )
         await query.edit_message_text(texte, reply_markup=InlineKeyboardMarkup(kb))
 
@@ -530,32 +526,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tier = data_cb.replace("aide_rejoindre_", "")
         sub_id, sub = get_sub_by_tier(telegram_id, tier)
         if not sub_id:
-            await query.answer("❌ Abonnement introuvable.", show_alert=True)
+            await query.answer("❌ Subscription not found.", show_alert=True)
             return
         in_canal = await is_user_in_canal(context.bot, telegram_id, tier)
         if in_canal:
             await query.edit_message_text(
-                "✅ Tu es déjà dans le canal !\n\nSi tu as un problème, contacte le support.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Contacter le support", url=SUPPORT_URL)]])
+                "✅ You're already in the channel!"
             )
             return
         count = get_invite_count(telegram_id, tier)
         if count >= 2:
             await query.edit_message_text(
-                "⛔ Limite atteinte\n\nTu as déjà généré 2 liens.\n\nContacte le support.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Contacter le support", url=SUPPORT_URL)]])
+                "⛔ Limit reached\n\nYou've already generated 2 links."
             )
             return
         dots = "🟢" * count + "⚪" * (2 - count)
         await query.edit_message_text(
-            f"❓ Tu n'arrives pas à rejoindre ?\n\n"
-            f"Le lien a peut-être expiré ou a déjà été utilisé.\n\n"
-            f"Tu peux en générer un nouveau ici.\n\n"
-            f"⚠️ Maximum 2 générations possibles. {dots} {count}/2\n"
-            f"Ne partage jamais ton lien.",
+            f"❓ Can't join?\n\n"
+            f"The link may have expired or already been used.\n\n"
+            f"You can generate a new one here.\n\n"
+            f"⚠️ Maximum 2 generations allowed. {dots} {count}/2\n"
+            f"Never share your link.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Générer un nouveau lien", callback_data=f"gen_lien_depuis_paiement_{tier}")],
-                [InlineKeyboardButton("👈🏽 Retour", callback_data=f"retour_paiement_{tier}")],
+                [InlineKeyboardButton("🔗 Generate a new link", callback_data=f"gen_lien_depuis_paiement_{tier}")],
+                [InlineKeyboardButton("👈🏽 Back", callback_data=f"retour_paiement_{tier}")],
             ])
         )
 
@@ -563,20 +557,18 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tier = data_cb.replace("gen_lien_depuis_paiement_", "")
         sub_id, sub = get_sub_by_tier(telegram_id, tier)
         if not sub_id:
-            await query.edit_message_text("❌ Abonnement introuvable.")
+            await query.edit_message_text("❌ Subscription not found.")
             return
         in_canal = await is_user_in_canal(context.bot, telegram_id, tier)
         if in_canal:
             await query.edit_message_text(
-                "✅ Tu es déjà dans le canal !\n\nContacte le support si problème.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Contacter le support", url=SUPPORT_URL)]])
+                "✅ You're already in the channel!"
             )
             return
         count = get_invite_count(telegram_id, tier)
         if count >= 2:
             await query.edit_message_text(
-                "⛔ Limite atteinte\n\nContacte le support.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("💬 Support", url=SUPPORT_URL)]])
+                "⛔ Limit reached"
             )
             return
         try:
@@ -587,15 +579,15 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             tier_short = TIERS[tier]["short"]
             kb = []
             if new_count < 2:
-                kb.append([InlineKeyboardButton("🔗 Générer un autre lien", callback_data=f"gen_lien_depuis_paiement_{tier}")])
+                kb.append([InlineKeyboardButton("🔗 Generate another link", callback_data=f"gen_lien_depuis_paiement_{tier}")])
             else:
-                kb.append([InlineKeyboardButton("⛔ Limite atteinte — 2/2", callback_data="noop")])
-            kb.append([InlineKeyboardButton("👈🏽 Retour", callback_data=f"retour_paiement_{tier}")])
+                kb.append([InlineKeyboardButton("⛔ Limit reached — 2/2", callback_data="noop")])
+            kb.append([InlineKeyboardButton("👈🏽 Back", callback_data=f"retour_paiement_{tier}")])
             await query.edit_message_text(
-                f"✅ Ton nouveau lien d'invitation :\n\n"
+                f"✅ Your new invite link:\n\n"
                 f"{invite.invite_link}\n\n"
-                f"⚠️ Lien personnel à usage unique. Ne le partage jamais.\n\n"
-                f"{dots} {new_count}/2 liens générés",
+                f"⚠️ Personal one-time link. Never share it.\n\n"
+                f"{dots} {new_count}/2 links generated",
                 reply_markup=InlineKeyboardMarkup(kb)
             )
             data = load_data()
@@ -604,7 +596,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_data(data)
         except Exception as e:
             print(f"❌ Erreur génération lien aide: {e}")
-            await query.answer("❌ Erreur. Contacte le support.", show_alert=True)
+            await query.answer("❌ Error.", show_alert=True)
 
     elif data_cb.startswith("retour_paiement_"):
         tier = data_cb.replace("retour_paiement_", "")
@@ -615,19 +607,19 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pending_link = data.get("pending_link", {}).get(f"{telegram_id}:{tier}", None)
         if pending_link:
             texte = (
-                f"✅ Paiement confirmé !\n\n"
-                f"Rejoint ton canal {tier_emoji} {tier_short} ici (lien à usage unique) :\n"
+                f"✅ Payment confirmed!\n\n"
+                f"Join your {tier_emoji} {tier_short} channel here (one-time use link):\n"
                 f"{pending_link}"
             )
         else:
             texte = (
-                f"✅ Paiement confirmé !\n\n"
-                f"Utilise le bouton ci-dessous si tu n'arrives pas à rejoindre le canal {tier_emoji} {tier_short}."
+                f"✅ Payment confirmed!\n\n"
+                f"Use the button below if you can't join the {tier_emoji} {tier_short} channel."
             )
         await query.edit_message_text(
             texte,
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("❓ Je n'arrive pas à rejoindre", callback_data=f"aide_rejoindre_{tier}")
+                InlineKeyboardButton("❓ I can't join", callback_data=f"aide_rejoindre_{tier}")
             ]])
         )
 
@@ -643,20 +635,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
         keyboard = [
-            [InlineKeyboardButton("🔗 Accéder à mon canal", callback_data=f"menu_canal_{tier}")],
+            [InlineKeyboardButton("🔗 Access my channel", callback_data=f"menu_canal_{tier}")],
             [InlineKeyboardButton("💬 Support", callback_data="menu_support")],
-            [InlineKeyboardButton("❌ Résilier", callback_data=f"menu_resilier_{tier}")],
-            [InlineKeyboardButton("👈🏽 Retour", callback_data="menu_retour_abo")],
+            [InlineKeyboardButton("❌ Cancel", callback_data=f"menu_resilier_{tier}")],
+            [InlineKeyboardButton("👈🏽 Back", callback_data="menu_retour_abo")],
         ]
         await query.edit_message_text(
-            f"⚙️ Gestion — {tier_nom}\n\nQue souhaites-tu faire ?",
+            f"⚙️ Manage — {tier_nom}\n\nWhat would you like to do?",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
     elif data_cb == "menu_retour_abo":
         subs = get_subs_for_user(telegram_id)
         if not subs:
-            await query.edit_message_text("❌ Tu n'as pas d'abonnement actif.")
+            await query.edit_message_text("❌ You don't have an active subscription.")
             return
         await query.edit_message_text(
             texte_espace_abo(subs),
@@ -667,36 +659,32 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tier = data_cb.replace("menu_canal_", "")
         sub_id, sub = get_sub_by_tier(telegram_id, tier)
         if not sub_id:
-            await query.edit_message_text("❌ Tu n'as pas d'abonnement actif.")
+            await query.edit_message_text("❌ You don't have an active subscription.")
             return
         count = get_invite_count(telegram_id, tier)
         in_canal = await is_user_in_canal(context.bot, telegram_id, tier)
         if in_canal:
             await query.edit_message_text(
-                "✅ Tu es déjà dans le canal !\n\nSi tu as un problème, contacte le support.",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("💬 Contacter le support", url=SUPPORT_URL)
-                ], [InlineKeyboardButton("👈🏽 Retour", callback_data=f"menu_gerer_{tier}")]])
+                "✅ You're already in the channel!",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👈🏽 Back", callback_data=f"menu_gerer_{tier}")]])
             )
             return
         if count >= 2:
             await query.edit_message_text(
-                "⛔ Limite atteinte\n\nTu as déjà généré 2 liens.\n\nContacte le support.",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("💬 Contacter le support", url=SUPPORT_URL)
-                ], [InlineKeyboardButton("👈🏽 Retour", callback_data=f"menu_gerer_{tier}")]])
+                "⛔ Limit reached\n\nYou've already generated 2 links.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👈🏽 Back", callback_data=f"menu_gerer_{tier}")]])
             )
             return
         dots = "🟢" * count + "⚪" * (2 - count)
         await query.edit_message_text(
-            f"🔗 Accéder à mon canal\n\n"
-            f"Tu as quitté le groupe sans faire exprès ?\n\n"
-            f"Tu peux générer un nouveau lien ici.\n\n"
-            f"⚠️ Maximum 2 générations possibles. {dots} {count}/2\n"
-            f"Si tu partages ton lien, ton abonnement sera résilié immédiatement.",
+            f"🔗 Access my channel\n\n"
+            f"Accidentally left the group?\n\n"
+            f"You can generate a new link here.\n\n"
+            f"⚠️ Maximum 2 generations allowed. {dots} {count}/2\n"
+            f"If you share your link, your subscription will be cancelled immediately.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Générer mon lien d'invitation", callback_data=f"gen_lien_{tier}")],
-                [InlineKeyboardButton("👈🏽 Retour", callback_data=f"menu_gerer_{tier}")],
+                [InlineKeyboardButton("🔗 Generate my invite link", callback_data=f"gen_lien_{tier}")],
+                [InlineKeyboardButton("👈🏽 Back", callback_data=f"menu_gerer_{tier}")],
             ])
         )
 
@@ -704,24 +692,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tier = data_cb.replace("gen_lien_", "")
         sub_id, sub = get_sub_by_tier(telegram_id, tier)
         if not sub_id:
-            await query.edit_message_text("❌ Tu n'as pas d'abonnement actif.")
+            await query.edit_message_text("❌ You don't have an active subscription.")
             return
         in_canal = await is_user_in_canal(context.bot, telegram_id, tier)
         if in_canal:
             await query.edit_message_text(
-                "✅ Tu es déjà dans le canal !\n\nContacte le support si problème.",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("💬 Support", url=SUPPORT_URL)
-                ], [InlineKeyboardButton("👈🏽 Retour", callback_data=f"menu_gerer_{tier}")]])
+                "✅ You're already in the channel!",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👈🏽 Back", callback_data=f"menu_gerer_{tier}")]])
             )
             return
         count = get_invite_count(telegram_id, tier)
         if count >= 2:
             await query.edit_message_text(
-                "⛔ Limite atteinte\n\nTu as déjà généré 2 liens. Contacte le support.",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("💬 Support", url=SUPPORT_URL)
-                ], [InlineKeyboardButton("👈🏽 Retour", callback_data=f"menu_gerer_{tier}")]])
+                "⛔ Limit reached\n\nYou've already generated 2 links.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👈🏽 Back", callback_data=f"menu_gerer_{tier}")]])
             )
             return
         try:
@@ -730,27 +714,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dots = "🟢" * new_count + "⚪" * (2 - new_count)
             kb = []
             if new_count < 2:
-                kb.append([InlineKeyboardButton("🔗 Générer un autre lien", callback_data=f"gen_lien_{tier}")])
+                kb.append([InlineKeyboardButton("🔗 Generate another link", callback_data=f"gen_lien_{tier}")])
             else:
-                kb.append([InlineKeyboardButton("⛔ Limite atteinte — 2/2", callback_data="noop")])
-            kb.append([InlineKeyboardButton("👈🏽 Retour", callback_data=f"menu_gerer_{tier}")])
+                kb.append([InlineKeyboardButton("⛔ Limit reached — 2/2", callback_data="noop")])
+            kb.append([InlineKeyboardButton("👈🏽 Back", callback_data=f"menu_gerer_{tier}")])
             await query.edit_message_text(
-                f"✅ Ton lien d'invitation :\n\n"
+                f"✅ Your invite link:\n\n"
                 f"{invite.invite_link}\n\n"
-                f"⚠️ Lien personnel à usage unique. Ne le partage jamais.\n\n"
-                f"{dots} {new_count}/2 liens générés",
+                f"⚠️ Personal one-time link. Never share it.\n\n"
+                f"{dots} {new_count}/2 links generated",
                 reply_markup=InlineKeyboardMarkup(kb)
             )
         except Exception as e:
             print(f"❌ Erreur génération lien gestion: {e}")
-            await query.edit_message_text("❌ Une erreur s'est produite. Contacte le support.")
+            await query.edit_message_text("❌ An error occurred.")
 
     elif data_cb == "menu_support":
         await query.edit_message_text(
-            "💬 Support\n\nUn problème ? Une question ?\n\nContacte-moi directement ici 👇\nJe réponds dans les plus brefs délais. 💕",
+            "💬 Support\n\nA problem? A question?\n\nContact me directly here 👇\nI reply as soon as possible. 💕",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✉️ Contacter le support", url=SUPPORT_URL)],
-                [InlineKeyboardButton("👈🏽 Retour", callback_data="menu_retour_abo")],
+                [InlineKeyboardButton("✉️ Contact support", url=SUPPORT_URL)],
+                [InlineKeyboardButton("👈🏽 Back", callback_data="menu_retour_abo")],
             ])
         )
 
@@ -758,30 +742,30 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tier = data_cb.replace("menu_resilier_", "")
         sub_id, sub = get_sub_by_tier(telegram_id, tier)
         if not sub_id:
-            await query.edit_message_text("❌ Tu n'as pas d'abonnement actif.")
+            await query.edit_message_text("❌ You don't have an active subscription.")
             return
         tier_nom = TIERS[tier]["nom"]
         period_end = sub.get("period_end")
-        date_fin = datetime.fromtimestamp(period_end).strftime("%d/%m/%Y") if period_end else (datetime.now() + timedelta(days=30)).strftime("%d/%m/%Y")
+        date_fin = datetime.fromtimestamp(period_end).strftime("%m/%d/%Y") if period_end else (datetime.now() + timedelta(days=30)).strftime("%m/%d/%Y")
         await query.edit_message_text(
-            f"⚠️ Attention — Résiliation de ton abonnement\n\n"
-            f"Tu es sur le point d'annuler ton abonnement {tier_nom}.\n\n"
-            f"Normalement ton accès était garanti jusqu'au {date_fin}.\n\n"
-            f"❌ Si tu résilies maintenant, tu perds l'accès IMMÉDIATEMENT.\n"
-            f"💸 Aucun remboursement ne sera effectué.\n\n"
-            f"Es-tu vraiment sûr de vouloir perdre ton accès maintenant ?",
+            f"⚠️ Warning — Cancelling your subscription\n\n"
+            f"You're about to cancel your {tier_nom} subscription.\n\n"
+            f"Your access was normally guaranteed until {date_fin}.\n\n"
+            f"❌ If you cancel now, you lose access IMMEDIATELY.\n"
+            f"💸 No refund will be issued.\n\n"
+            f"Are you sure you want to lose access now?",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Non, garder mon accès", callback_data=f"resilier_non_{tier}")],
-                [InlineKeyboardButton("❌ Oui, perdre mon accès", callback_data=f"resilier_oui_{tier}_{sub_id}")],
+                [InlineKeyboardButton("✅ No, keep my access", callback_data=f"resilier_non_{tier}")],
+                [InlineKeyboardButton("❌ Yes, lose my access", callback_data=f"resilier_oui_{tier}_{sub_id}")],
             ])
         )
 
     elif data_cb.startswith("resilier_non_"):
         tier = data_cb.replace("resilier_non_", "")
         await query.edit_message_text(
-            "✅ Bonne décision ! Ton abonnement reste actif. 💕",
+            "✅ Good choice! Your subscription remains active. 💕",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔓 Retour à mon abonnement", callback_data=f"menu_gerer_{tier}")
+                InlineKeyboardButton("🔓 Back to my subscription", callback_data=f"menu_gerer_{tier}")
             ]])
         )
 
@@ -795,17 +779,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         tier_nom = TIERS[tier]["nom"]
         period_end = sub.get("period_end")
-        date_fin = datetime.fromtimestamp(period_end).strftime("%d/%m/%Y") if period_end else (datetime.now() + timedelta(days=30)).strftime("%d/%m/%Y")
+        date_fin = datetime.fromtimestamp(period_end).strftime("%m/%d/%Y") if period_end else (datetime.now() + timedelta(days=30)).strftime("%m/%d/%Y")
         await query.edit_message_text(
-            f"⛔ Dernière confirmation\n\n"
-            f"Tu es sur le point de résilier définitivement ton abonnement {tier_nom}.\n\n"
-            f"Ton accès au canal privé sera supprimé *immédiatement*.\n"
-            f"Accès garanti jusqu'au : *{date_fin}*\n\n"
-            f"Cette action est irréversible. Es-tu sûr ?",
+            f"⛔ Final confirmation\n\n"
+            f"You're about to permanently cancel your {tier_nom} subscription.\n\n"
+            f"Your access to the private channel will be removed *immediately*.\n"
+            f"Access guaranteed until: *{date_fin}*\n\n"
+            f"This action is irreversible. Are you sure?",
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Non, je reste", callback_data=f"resilier_non_{tier}")],
-                [InlineKeyboardButton("❌ Oui, confirmer", callback_data=f"resilier_confirmer_{tier}_{sub_id}")],
+                [InlineKeyboardButton("✅ No, I'll stay", callback_data=f"resilier_non_{tier}")],
+                [InlineKeyboardButton("❌ Yes, confirm", callback_data=f"resilier_confirmer_{tier}_{sub_id}")],
             ])
         )
 
@@ -815,9 +799,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sub_id = parts[1] if len(parts) > 1 else ""
         sub_id_check, sub = get_sub_by_tier(telegram_id, tier)
         if sub_id_check != sub_id:
-            await query.edit_message_text("❌ Erreur — abonnement introuvable.")
+            await query.edit_message_text("❌ Error — subscription not found.")
             return
-        await query.edit_message_text("⏳ Résiliation en cours…")
+        await query.edit_message_text("⏳ Cancellation in progress…")
         msg_id = query.message.message_id
         success = stripe_cancel_subscription(sub_id)
         if success:
@@ -827,8 +811,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await context.bot.send_message(
                 chat_id=telegram_id,
-                text="❌ Une erreur s'est produite. Contacte le support.",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✉️ Support", url=SUPPORT_URL)]])
+                text="❌ An error occurred."
             )
 
     elif data_cb == "noop":
